@@ -5,6 +5,7 @@ import type { ChatModel, MessageModel } from "../../convex/schema"
 import { Id } from "../../convex/_generated/dataModel"
 import { chatStore, generateDbRecordId } from "../App"
 import { createAsync } from "@solidjs/router"
+import { createMutable, createStore } from "solid-js/store"
 
 // TODO: CONTINUE: streaming is working enough
 // TBD:OPTIONAL: should we use convex to force sync to run when new stuff comes up; consider how much extra load it will cause
@@ -14,10 +15,21 @@ export function ChatPage() {
   let chatId = "jd72sq6h6t1g8yc09dh0ndgfz17hjk49"
   let streaming = createMemo(() => false)
 
-  let messages = createAsync(async () => {
-    return (await store.messages.all())
+  let [messages, setMessages] = createStore([] as MessageModel[])
+
+  createEffect(async () => {
+    let items = (await store.messages.all())
       .filter(x => x.chatId === chatId)
       .sort((a, b) => a.index - b.index)
+    if (messages.length) {
+      let newMessages: MessageModel[] = []
+      for (let i = messages.length; i < items.length; i++) {
+        newMessages.push(items[i])
+      }
+      setMessages(prev => [...prev, ...newMessages])
+    } else {
+      setMessages(items)
+    }
   })
 
   let inputRef: HTMLInputElement | undefined = undefined
@@ -29,7 +41,7 @@ export function ChatPage() {
     form.reset()
     inputRef?.focus()
     if (!message) return
-    let nextIndex = messages()?.length ?? 0
+    let nextIndex = messages.length
     let id = generateDbRecordId()
     await store.messages.set(id, {
       content: message,
@@ -41,10 +53,7 @@ export function ChatPage() {
   return (
     <main class="p-10">
       <div class="space-y-4 py-6">
-        <Show when={messages === undefined}>
-          <div>Loading...</div>
-        </Show>
-        <Index each={messages()}>
+        <Index each={messages}>
           {(message) => (
             <MessageItem message={message()} />
           )}
