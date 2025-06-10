@@ -5,20 +5,26 @@ export const RecordIdSchema = v.id("records")
 
 export const ChatSchema = v.object({
   id: v.optional(v.string()),
-  stream: v.optional(v.object({
-    chunks: v.array(v.string()),
-  })),
   createdAt: v.number(),
+  convexId: v.optional(v.id("records")),
 })
 
 export const MessageSchema = v.object({
   id: v.optional(v.string()),
   content: v.string(),
+  streaming: v.optional(v.boolean()),
   chatId: RecordIdSchema,
   index: v.number(),
+  convexId: v.optional(v.id("records")),
+  streamId: v.optional(v.id("streams")),
 })
 
 let RecordTypeSchema = v.union(v.literal("chats"), v.literal("messages"))
+
+export const StreamSchema = v.object({
+  content: v.string(),
+  finished: v.boolean(),
+})
 
 export const RecordSchema = {
   type: RecordTypeSchema,
@@ -27,14 +33,16 @@ export const RecordSchema = {
   data: v.union(ChatSchema, MessageSchema)
 }
 
-
 export type RecordType = Infer<typeof RecordTypeSchema>
 export type RecordId = Infer<typeof RecordIdSchema>
 export type ChatModel = Infer<typeof ChatSchema>
 export type MessageModel = Infer<typeof MessageSchema>
+export type RecordData = MessageModel | ChatModel
+export type StreamModel = Infer<typeof StreamSchema>
 
 export default defineSchema({
   records: defineTable(RecordSchema)
     .index("by_updatedAt", ["updatedAt"]),
+  streams: defineTable(StreamSchema),
 })
 
