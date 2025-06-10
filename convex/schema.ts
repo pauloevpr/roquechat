@@ -3,6 +3,7 @@ import { Infer, v } from "convex/values";
 
 export const RecordIdSchema = v.id("records")
 
+
 export const ChatSchema = v.object({
   id: v.optional(v.string()),
   createdAt: v.number(),
@@ -19,12 +20,13 @@ export const MessageSchema = v.object({
   streamId: v.optional(v.id("streams")),
 })
 
-let RecordTypeSchema = v.union(v.literal("chats"), v.literal("messages"))
-
 export const StreamSchema = v.object({
-  content: v.string(),
+  content: v.array(v.string()),
   finished: v.boolean(),
+  updatedAt: v.number(),
 })
+
+let RecordTypeSchema = v.union(v.literal("chats"), v.literal("messages"))
 
 export const RecordSchema = {
   type: RecordTypeSchema,

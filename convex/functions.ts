@@ -51,7 +51,7 @@ export const sync = mutation({
         })
         if (record.type === "messages") {
           let message = record.data as MessageModel
-          // TODO: we intentionally only allow one new message per sync help prevent DDoS
+          // we intentionally only allow one new message per sync help prevent DDoS
           newMessage = message
         }
       } else {
@@ -67,7 +67,11 @@ export const sync = mutation({
       }
     }
     if (newMessage) {
-      let streamId = await ctx.db.insert("streams", { content: "", finished: false })
+      let streamId = await ctx.db.insert("streams", {
+        content: [],
+        finished: false,
+        updatedAt: Date.now()
+      })
       let responseMessage: MessageModel = {
         chatId: newMessage.chatId,
         content: "",
@@ -113,15 +117,34 @@ export const sync = mutation({
 
 export const appendStreamContent = internalMutation({
   args: {
-    id: v.id("streams"),
+    streamId: v.id("streams"),
+    messageId: v.id("records"),
     content: v.string(),
     final: v.boolean()
   },
-  handler: async (ctx, { id, content, final }) => {
-    let stream = await ctx.db.get(id)
-    if (!stream) throw new Error(`Stream ${id} not found`)
-    content = stream.content += content
-    await ctx.db.patch(id, { content, finished: final })
+  handler: async (ctx, { streamId, messageId, content, final }) => {
+    let stream = await ctx.db.get(streamId)
+    if (!stream) throw new Error(`Stream ${streamId} not found`)
+    let newContent = [...stream.content, content]
+    await ctx.db.patch(streamId, {
+      content: newContent,
+      finished: final,
+      updatedAt: Date.now()
+    })
+    if (final) {
+      let message = await ctx.db.get(messageId)
+      if (!message) throw new Error(`Message ${messageId} not found`)
+      if (message.type !== "messages") throw new Error(`Message ${messageId} is not a message`)
+      let messageData = message.data as MessageModel
+      await ctx.db.patch(messageId, {
+        data: {
+          ...messageData,
+          content: stream.content.join(""),
+          streaming: false,
+          streamId: undefined
+        }
+      })
+    }
   }
 })
 
@@ -132,11 +155,12 @@ export const handleInputMessageInternal = internalAction({
     responseMessageId: v.id("records")
   },
   handler: async (ctx, { streamId, inputMessage, responseMessageId }) => {
-    let chunksCount = 5000
+    let chunksCount = 50
     for (let i = 0; i < chunksCount; i++) {
       let chunk = `Message chunk ${i} `
       await ctx.runMutation(internal.functions.appendStreamContent, {
-        id: streamId,
+        streamId,
+        messageId: responseMessageId,
         content: chunk,
         final: i === chunksCount - 1
       })

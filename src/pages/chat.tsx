@@ -70,9 +70,13 @@ export function ChatPage() {
 
 function MessageItem(props: { message: MessageModel }) {
   let store = chatStore.use()
-  let [dynamicContent, setDynamicContent] = createSignal("")
+  let [dynamicContent, setDynamicContent] = createSignal<string[] | undefined>(undefined)
   let content = createMemo(() => {
-    return dynamicContent() || props.message.content
+    return dynamicContent() || [props.message.content]
+  })
+
+  createEffect(() => {
+    console.log("message updated: ", props.message)
   })
 
   let unsubscribe: Function | undefined = undefined
@@ -84,12 +88,11 @@ function MessageItem(props: { message: MessageModel }) {
         api.functions.getStream,
         { id: props.message.streamId },
         stream => {
-          let newContent = stream?.content || ""
+          let newContent = stream?.content || []
           setDynamicContent(newContent)
           if (stream?.finished) {
             console.log("unsubscribing from message", props.message.streamId)
             unsubscribe?.()
-            unsubscribe = undefined
             console.log("syncing store")
             store.sync()
           }
@@ -111,7 +114,11 @@ function MessageItem(props: { message: MessageModel }) {
 
   return (
     <article class="border-2 border-gray-300 rounded-md p-2">
-      <span>{content()}</span>
+      <Index each={content()}>
+        {(chunk) => (
+          <span>{chunk()}</span>
+        )}
+      </Index>
     </article>
   )
 }
