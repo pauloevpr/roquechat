@@ -1,4 +1,4 @@
-import { Accessor, createEffect, createMemo, createSignal, Index, onCleanup, Show, untrack } from "solid-js"
+import { Accessor, createEffect, createMemo, createResource, createSignal, Index, onCleanup, Show, untrack } from "solid-js"
 import { convex, useQuery } from "../convex"
 import { api } from "../../convex/_generated/api"
 import type { ChatModel, MessageModel } from "../../convex/schema"
@@ -6,13 +6,17 @@ import { Id } from "../../convex/_generated/dataModel"
 import { chatStore, generateDbRecordId } from "../App"
 import { createAsync } from "@solidjs/router"
 import { createMutable, createStore } from "solid-js/store"
+import { Marked } from "marked";
+import "highlight.js/styles/github.css";
+import hljs from 'highlight.js';
+import { markedHighlight } from 'marked-highlight';
+import DOMPurify from 'dompurify';
 
-// TODO: CONTINUE: streaming is working enough
-// TBD:OPTIONAL: should we use convex to force sync to run when new stuff comes up; consider how much extra load it will cause
+
 
 export function ChatPage() {
   let store = chatStore.use()
-  let chatId = "jd72sq6h6t1g8yc09dh0ndgfz17hjk49"
+  let chatId = "j5757hka6egxk0t3z56j4y4dtx7hk0aw"
   let streaming = createMemo(() => false)
 
   let [messages, setMessages] = createStore([] as MessageModel[])
@@ -47,6 +51,7 @@ export function ChatPage() {
       content: message,
       chatId: chatId as Id<"records">,
       index: nextIndex,
+      from: "user"
     })
   }
 
@@ -77,6 +82,26 @@ export function ChatPage() {
 }
 
 
+
+
+const marked = new Marked(
+  markedHighlight({
+    emptyLangClass: 'hljs',
+    langPrefix: 'hljs language-',
+    highlight(code, lang, info) {
+      const language = hljs.getLanguage(lang) ? lang : 'plaintext';
+      return hljs.highlight(code, { language }).value;
+    }
+  }),
+);
+
+marked.use({
+  hooks: {
+    postprocess: (html: string) => DOMPurify.sanitize(html)
+  }
+});
+
+
 function MessageItem(props: { message: MessageModel }) {
   let store = chatStore.use()
   let [dynamicContent, setDynamicContent] = createSignal<string[] | undefined>(undefined)
@@ -84,8 +109,8 @@ function MessageItem(props: { message: MessageModel }) {
     return dynamicContent() || [props.message.content]
   })
 
-  createEffect(() => {
-    console.log("message updated: ", props.message)
+  let [html] = createResource(content, (content) => {
+    return marked.parse(content.join(""))
   })
 
   let unsubscribe: Function | undefined = undefined
@@ -122,12 +147,8 @@ function MessageItem(props: { message: MessageModel }) {
   })
 
   return (
-    <article class="border-2 border-gray-300 rounded-md p-2">
-      <Index each={content()}>
-        {(chunk) => (
-          <span>{chunk()}</span>
-        )}
-      </Index>
+    <article class="prose border-2 border-gray-300 rounded-md p-2">
+      <div innerHTML={html()} />
     </article>
   )
 }
