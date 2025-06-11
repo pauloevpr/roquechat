@@ -1,7 +1,13 @@
-import { internalAction, internalMutation, mutation, query } from "./_generated/server";
+import { internalAction, internalMutation, internalQuery, mutation, query } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { v } from "convex/values";
 import { ChatModel, ChatSchema, MessageModel, MessageSchema, RecordData, RecordType } from "./schema";
+import { OpenAI } from "openai";
+
+const openai = new OpenAI({
+  // apiKey: process.env.OPENAI_API_KEY
+});
+
 
 export const getStream = query({
   args: {
@@ -43,17 +49,18 @@ export const sync = mutation({
       let isNewRecord = record.id.startsWith("clientid:");
       if (isNewRecord) {
         record.data.id = record.id
+        if (record.type === "messages") {
+          let message = record.data as MessageModel
+          message.from = "user"
+          // we intentionally only allow to respond to one single message per sync to help prevent DDoS
+          newMessage = message
+        }
         await ctx.db.insert("records", {
           type: record.type,
           deleted: false,
           updatedAt: Date.now(),
           data: record.data
         })
-        if (record.type === "messages") {
-          let message = record.data as MessageModel
-          // we intentionally only allow one new message per sync help prevent DDoS
-          newMessage = message
-        }
       } else {
         let recordId = ctx.db.normalizeId("records", record.id);
         if (!recordId) throw new Error(`Record ${record.id} is not a valid id`)
@@ -77,7 +84,8 @@ export const sync = mutation({
         content: "",
         index: newMessage.index + 0.5,
         streaming: true,
-        streamId
+        streamId,
+        from: "assistant"
       }
       let responseMessageId = await ctx.db.insert("records", {
         type: "messages",
@@ -85,9 +93,9 @@ export const sync = mutation({
         updatedAt: Date.now(),
         data: responseMessage
       })
-      ctx.scheduler.runAfter(0, internal.functions.handleInputMessageInternal, {
+      ctx.scheduler.runAfter(0, internal.functions.startStream, {
         streamId,
-        inputMessage: newMessage,
+        chatId: newMessage.chatId,
         responseMessageId
       })
     }
@@ -139,7 +147,7 @@ export const appendStreamContent = internalMutation({
       await ctx.db.patch(messageId, {
         data: {
           ...messageData,
-          content: stream.content.join(""),
+          content: newContent.join(""),
           streaming: false,
           streamId: undefined
         }
@@ -148,23 +156,69 @@ export const appendStreamContent = internalMutation({
   }
 })
 
-export const handleInputMessageInternal = internalAction({
+export const getMessagesForChat = internalQuery({
+  args: {
+    chatId: v.id("records")
+  },
+  handler: async (ctx, { chatId }) => {
+    let messages = await ctx.db
+      .query("records")
+      .withIndex("by_chatId", (q) => q.eq("data.chatId", chatId))
+      .collect()
+    return messages.map(x => x.data as MessageModel)
+  }
+})
+
+export const startStream = internalAction({
   args: {
     streamId: v.id("streams"),
-    inputMessage: MessageSchema,
+    chatId: v.id("records"),
     responseMessageId: v.id("records")
   },
-  handler: async (ctx, { streamId, inputMessage, responseMessageId }) => {
-    let chunksCount = 50
-    for (let i = 0; i < chunksCount; i++) {
-      let chunk = `Message chunk ${i} `
+  handler: async (ctx, { streamId, chatId, responseMessageId }) => {
+    let history = (
+      await ctx.runQuery(internal.functions.getMessagesForChat, {
+        chatId: chatId
+      }))
+      .sort((a, b) => a.index - b.index)
+      .map(x => ({ role: x.from, content: x.content }))
+
+    console.log("history", history)
+
+    try {
+      const stream = await openai.chat.completions.create({
+        model: 'gpt-4.1-mini', // or 'gpt-3.5-turbo'
+        messages: history,
+        stream: true
+      });
+      for await (const chunk of stream) {
+        const content = chunk.choices?.[0]?.delta?.content;
+        if (content) {
+          await ctx.runMutation(internal.functions.appendStreamContent, {
+            streamId,
+            messageId: responseMessageId,
+            content: content,
+            final: false
+          })
+        }
+      }
       await ctx.runMutation(internal.functions.appendStreamContent, {
         streamId,
         messageId: responseMessageId,
-        content: chunk,
-        final: i === chunksCount - 1
+        content: "",
+        final: true
       })
-      await new Promise(resolve => setTimeout(resolve, 20))
+    } catch (error) {
+      await ctx.runMutation(internal.functions.appendStreamContent, {
+        streamId,
+        messageId: responseMessageId,
+        content: `Failed: ${error}`,
+        final: true
+      })
     }
   }
 })
+
+
+
+

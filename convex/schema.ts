@@ -12,12 +12,13 @@ export const ChatSchema = v.object({
 
 export const MessageSchema = v.object({
   id: v.optional(v.string()),
-  content: v.string(),
+  content: v.string(), // TODO: this should be an array of strings so we dont have to join them chunks in the server
   streaming: v.optional(v.boolean()),
   chatId: RecordIdSchema,
   index: v.number(),
   convexId: v.optional(v.id("records")),
   streamId: v.optional(v.id("streams")),
+  from: v.union(v.literal("user"), v.literal("assistant")),
 })
 
 export const StreamSchema = v.object({
@@ -32,7 +33,7 @@ export const RecordSchema = {
   type: RecordTypeSchema,
   updatedAt: v.number(),
   deleted: v.boolean(),
-  data: v.union(ChatSchema, MessageSchema)
+  data: v.union(ChatSchema, MessageSchema),
 }
 
 export type RecordType = Infer<typeof RecordTypeSchema>
@@ -44,7 +45,8 @@ export type StreamModel = Infer<typeof StreamSchema>
 
 export default defineSchema({
   records: defineTable(RecordSchema)
-    .index("by_updatedAt", ["updatedAt"]),
+    .index("by_updatedAt", ["updatedAt"])
+    .index("by_chatId", ["data.chatId"]),
   streams: defineTable(StreamSchema),
 })
 
