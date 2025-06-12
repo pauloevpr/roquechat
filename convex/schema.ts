@@ -1,8 +1,8 @@
 import { defineSchema, defineTable } from "convex/server";
 import { Infer, v } from "convex/values";
+import { authTables } from "@convex-dev/auth/server";
 
 export const RecordIdSchema = v.id("records")
-
 
 export const ChatSchema = v.object({
   id: v.optional(v.string()),
@@ -44,6 +44,7 @@ export type RecordData = MessageModel | ChatModel
 export type StreamModel = Infer<typeof StreamSchema>
 
 export default defineSchema({
+  ...authTables,
   records: defineTable(RecordSchema)
     .index("by_updatedAt", ["updatedAt"])
     .index("by_chatId", ["data.chatId"]),

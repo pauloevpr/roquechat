@@ -1,21 +1,33 @@
-import { Accessor, createEffect, createMemo, createResource, createSignal, Index, onCleanup, Show, untrack } from "solid-js"
-import { convex, useQuery } from "../convex"
+import { createEffect, createMemo, createResource, createSignal, Index, onCleanup, Show, untrack } from "solid-js"
 import { api } from "../../convex/_generated/api"
-import type { ChatModel, MessageModel } from "../../convex/schema"
+import type { MessageModel } from "../../convex/schema" // TODO: maybe we should import from _generated
 import { Id } from "../../convex/_generated/dataModel"
-import { chatStore, generateDbRecordId } from "../App"
-import { createAsync } from "@solidjs/router"
-import { createMutable, createStore } from "solid-js/store"
+import { wireStore, createRecordId } from "../lib/store"
+import { createStore } from "solid-js/store"
 import { Marked } from "marked";
 import "highlight.js/styles/github.css";
 import hljs from 'highlight.js';
 import { markedHighlight } from 'marked-highlight';
 import DOMPurify from 'dompurify';
+import { useConvex } from "../lib/convex/provider"
+
+
+// TODO: CONTINUE: basic auth is done; next:
+// create auth provider + context to wrap protected pages
+// figure out how refresh tokens work
+// update the schema so the other tables relate to the users
+// update solid-wire store mounting to pass userid as namespace
+
+// get the userId to check if it is logged in
+// const userId = await getAuthUserId(ctx);
+
+//get user details (the _id is not here in a single field; only use to get more info
+// let user = await ctx.auth.getUserIdentity()
 
 
 
 export function ChatPage() {
-  let store = chatStore.use()
+  let store = wireStore.use()
   let chatId = "j5757hka6egxk0t3z56j4y4dtx7hk0aw"
   let streaming = createMemo(() => false)
 
@@ -37,6 +49,7 @@ export function ChatPage() {
   })
 
   let inputRef: HTMLInputElement | undefined = undefined
+
   async function onSubmit(e: SubmitEvent) {
     e.preventDefault()
     let form = e.target as HTMLFormElement
@@ -46,7 +59,7 @@ export function ChatPage() {
     inputRef?.focus()
     if (!message) return
     let nextIndex = messages.length
-    let id = generateDbRecordId()
+    let id = createRecordId()
     await store.messages.set(id, {
       content: message,
       chatId: chatId as Id<"records">,
@@ -81,9 +94,6 @@ export function ChatPage() {
   )
 }
 
-
-
-
 const marked = new Marked(
   markedHighlight({
     emptyLangClass: 'hljs',
@@ -103,7 +113,8 @@ marked.use({
 
 
 function MessageItem(props: { message: MessageModel }) {
-  let store = chatStore.use()
+  let { convex } = useConvex()
+  let store = wireStore.use()
   let [dynamicContent, setDynamicContent] = createSignal<string[] | undefined>(undefined)
   let content = createMemo(() => {
     return dynamicContent() || [props.message.content]
@@ -114,10 +125,10 @@ function MessageItem(props: { message: MessageModel }) {
   })
 
   let unsubscribe: Function | undefined = undefined
+
   createEffect(() => {
     if (unsubscribe) return
     if (props.message.streaming && props.message.streamId) {
-      console.log("subscribing to message", props.message.streamId)
       unsubscribe = convex.onUpdate(
         api.functions.getStream,
         { id: props.message.streamId },
@@ -125,9 +136,7 @@ function MessageItem(props: { message: MessageModel }) {
           let newContent = stream?.content || []
           setDynamicContent(newContent)
           if (stream?.finished) {
-            console.log("unsubscribing from message", props.message.streamId)
             unsubscribe?.()
-            console.log("syncing store")
             store.sync()
           }
         }
@@ -152,3 +161,26 @@ function MessageItem(props: { message: MessageModel }) {
     </article>
   )
 }
+
+// const result = await client.action(
+//   "auth:signIn" as unknown as SignInAction,
+//   { provider, params, verifier },
+// );
+// if (result.redirect !== undefined) {
+//   const url = new URL(result.redirect);
+//   await storageSet(VERIFIER_STORAGE_KEY, result.verifier!);
+//   // Do not redirect in React Native
+//   // Using a deprecated property because it's the only explicit check
+//   // available, and they set it explicitly and intentionally for this
+//   // purpose.
+//   if (navigator.product !== "ReactNative") {
+//     window.location.href = url.toString();
+//   }
+//   return { signingIn: false, redirect: url };
+// } else if (result.tokens !== undefined) {
+//   const { tokens } = result;
+//   logVerbose(`signed in and got tokens, is null: ${tokens === null}`);
+//   await setToken({ shouldStore: true, tokens });
+//   return { signingIn: result.tokens !== null };
+// }
+// return { signingIn: false };

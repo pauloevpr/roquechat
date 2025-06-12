@@ -1,13 +1,15 @@
 import { internalAction, internalMutation, internalQuery, mutation, query } from "./_generated/server";
 import { internal } from "./_generated/api";
+import { DataModel } from "./_generated/dataModel";
 import { v } from "convex/values";
 import { ChatModel, ChatSchema, MessageModel, MessageSchema, RecordData, RecordType } from "./schema";
 import { OpenAI } from "openai";
+import { GenericMutationCtx } from "convex/server";
+import { getAuthUserId } from "@convex-dev/auth/server";
 
 const openai = new OpenAI({
   // apiKey: process.env.OPENAI_API_KEY
 });
-
 
 export const getStream = query({
   args: {
@@ -52,7 +54,6 @@ export const sync = mutation({
         if (record.type === "messages") {
           let message = record.data as MessageModel
           message.from = "user"
-          // we intentionally only allow to respond to one single message per sync to help prevent DDoS
           newMessage = message
         }
         await ctx.db.insert("records", {
@@ -73,31 +74,9 @@ export const sync = mutation({
         })
       }
     }
+    // we intentionally only allow to respond to one single message per sync to help prevent DDoS
     if (newMessage) {
-      let streamId = await ctx.db.insert("streams", {
-        content: [],
-        finished: false,
-        updatedAt: Date.now()
-      })
-      let responseMessage: MessageModel = {
-        chatId: newMessage.chatId,
-        content: "",
-        index: newMessage.index + 0.5,
-        streaming: true,
-        streamId,
-        from: "assistant"
-      }
-      let responseMessageId = await ctx.db.insert("records", {
-        type: "messages",
-        deleted: false,
-        updatedAt: Date.now(),
-        data: responseMessage
-      })
-      ctx.scheduler.runAfter(0, internal.functions.startStream, {
-        streamId,
-        chatId: newMessage.chatId,
-        responseMessageId
-      })
+      await onNewMessage(ctx, newMessage)
     }
     let cursor = args.cursor ?? 0
     let updatedRecordsRaw = await ctx.db
@@ -113,8 +92,7 @@ export const sync = mutation({
         data: data
       }
       return record
-    }
-    )
+    })
     let updatedAt = updatedRecordsRaw[updatedRecordsRaw.length - 1]?.updatedAt ?? 0
     return {
       records: updatedRecords,
@@ -183,8 +161,6 @@ export const startStream = internalAction({
       .sort((a, b) => a.index - b.index)
       .map(x => ({ role: x.from, content: x.content }))
 
-    console.log("history", history)
-
     try {
       const stream = await openai.chat.completions.create({
         model: 'gpt-4.1-mini', // or 'gpt-3.5-turbo'
@@ -219,6 +195,32 @@ export const startStream = internalAction({
   }
 })
 
+async function onNewMessage(ctx: GenericMutationCtx<DataModel>, newMessage: MessageModel) {
+  let streamId = await ctx.db.insert("streams", {
+    content: [],
+    finished: false,
+    updatedAt: Date.now()
+  })
+  let responseMessage: MessageModel = {
+    chatId: newMessage.chatId,
+    content: "",
+    index: newMessage.index + 0.5,
+    streaming: true,
+    streamId,
+    from: "assistant"
+  }
+  let responseMessageId = await ctx.db.insert("records", {
+    type: "messages",
+    deleted: false,
+    updatedAt: Date.now(),
+    data: responseMessage
+  })
+  ctx.scheduler.runAfter(0, internal.functions.startStream, {
+    streamId,
+    chatId: newMessage.chatId,
+    responseMessageId
+  })
+}
 
 
 
