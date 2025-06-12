@@ -1,47 +1,63 @@
 import { internalAction, internalMutation, internalQuery, mutation, query } from "./_generated/server";
 import { internal } from "./_generated/api";
-import { DataModel } from "./_generated/dataModel";
-import { v } from "convex/values";
+import { DataModel, Id } from "./_generated/dataModel";
+import { v, Infer } from "convex/values";
 import { ChatModel, ChatSchema, MessageModel, MessageSchema, RecordData, RecordType } from "./schema";
 import { OpenAI } from "openai";
-import { GenericMutationCtx } from "convex/server";
+import { GenericMutationCtx, GenericQueryCtx } from "convex/server";
 import { getAuthUserId } from "@convex-dev/auth/server";
 
 const openai = new OpenAI({
   // apiKey: process.env.OPENAI_API_KEY
 });
 
+
+export const getCurrentUser = query({
+  args: {},
+  handler: async (ctx) => {
+    let userId = await getRequiredUserId(ctx);
+    let user = await ctx.db.get(userId)!
+    console.log("user", user)
+    console.log("userId", userId)
+    return {
+      id: userId,
+      name: user?.name || "",
+    }
+  }
+})
+
 export const getStream = query({
   args: {
     id: v.id("streams")
   },
   handler: async (ctx, { id }) => {
-    // TODO: check if the user owns the message
-    return await ctx.db.get(id)
+    let userId = await getRequiredUserId(ctx);
+    let stream = await ctx.db.get(id)
+    if (!stream || stream.userId !== userId) throw new Error(`Stream ${id} not found`)
+    return stream
   }
+})
+
+let ChatSyncSchema = v.object({
+  id: v.string(),
+  state: v.union(v.literal("updated"), v.literal("deleted")),
+  data: ChatSchema,
+})
+
+let MessageSyncSchema = v.object({
+  id: v.string(),
+  state: v.union(v.literal("updated"), v.literal("deleted")),
+  data: MessageSchema,
 })
 
 export const sync = mutation({
   args: {
     cursor: v.optional(v.number()),
-    chats: v.array(
-      v.object({
-        id: v.string(),
-        state: v.union(v.literal("updated"), v.literal("deleted")),
-        data: ChatSchema,
-      })
-    ),
-    messages: v.array(
-      v.object({
-        id: v.string(),
-        state: v.union(v.literal("updated"), v.literal("deleted")),
-        data: MessageSchema,
-      })
-    )
+    chats: v.array(ChatSyncSchema),
+    messages: v.array(MessageSyncSchema)
   },
   handler: async (ctx, args) => {
-    // TODO: make sure we check if the use owns the record before updating it
-    // TODO: make sure we check the chat exists and the use owns it
+    let userId = await getRequiredUserId(ctx)
     let allRecords = [
       ...args.chats.map(x => ({ ...x, type: "chats" as RecordType })),
       ...args.messages.map(x => ({ ...x, type: "messages" as RecordType })),
@@ -53,47 +69,40 @@ export const sync = mutation({
         record.data.id = record.id
         if (record.type === "messages") {
           let message = record.data as MessageModel
-          message.from = "user"
-          newMessage = message
+          let valid = await validateMessage(userId, message, ctx)
+          if (valid) {
+            newMessage = message
+          } else {
+            console.warn(`Unable to sync message ${record.id} for user ${userId}. Message failed validation.`)
+            record.state = "deleted"
+          }
         }
         await ctx.db.insert("records", {
           type: record.type,
           deleted: false,
           updatedAt: Date.now(),
-          data: record.data
+          data: record.data,
+          userId: userId
         })
       } else {
-        let recordId = ctx.db.normalizeId("records", record.id);
-        if (!recordId) throw new Error(`Record ${record.id} is not a valid id`)
-        let existingRecord = await ctx.db.get(recordId)
-        if (!existingRecord) throw new Error(`Record ${record.id} does not exist`)
-        await ctx.db.patch(existingRecord._id, {
+        let recordId = await validateRecordId(record.id, userId, ctx)
+        if (!recordId) {
+          console.warn(`Unable to sync record ${record.id} for user ${userId}. Record failed validation.`)
+          continue
+        }
+        await ctx.db.patch(recordId, {
           deleted: record.state === "deleted",
           updatedAt: Date.now(),
           data: record.data
         })
       }
     }
-    // we intentionally only allow to respond to one single message per sync to help prevent DDoS
+    // we intentionally only want to respond to one single message per sync to help prevent DDoS
     if (newMessage) {
-      await onNewMessage(ctx, newMessage)
+      await onNewMessage(userId, ctx, newMessage)
     }
     let cursor = args.cursor ?? 0
-    let updatedRecordsRaw = await ctx.db
-      .query("records")
-      .withIndex("by_updatedAt", (q) => q.gt("updatedAt", cursor))
-      .collect()
-    let updatedRecords = updatedRecordsRaw.map(x => {
-      let data: RecordData = { ...x.data, convexId: x._id }
-      let record = {
-        id: x._id,
-        state: (x.deleted ? "deleted" : "updated") as "updated" | "deleted",
-        type: x.type,
-        data: data
-      }
-      return record
-    })
-    let updatedAt = updatedRecordsRaw[updatedRecordsRaw.length - 1]?.updatedAt ?? 0
+    let { updatedRecords, updatedAt } = await getUpdatedRecords(userId, cursor, ctx)
     return {
       records: updatedRecords,
       syncCursor: updatedAt,
@@ -130,6 +139,10 @@ export const appendStreamContent = internalMutation({
           streamId: undefined
         }
       })
+      let deleteAfter = 2 * 60 * 60 * 1000 // 2 hours
+      await ctx.scheduler.runAfter(deleteAfter, internal.functions.deleteStream, {
+        streamId
+      })
     }
   }
 })
@@ -147,6 +160,16 @@ export const getMessagesForChat = internalQuery({
   }
 })
 
+
+export const deleteStream = internalMutation({
+  args: {
+    streamId: v.id("streams")
+  },
+  handler: async (ctx, { streamId }) => {
+    await ctx.db.delete(streamId)
+  }
+})
+
 export const startStream = internalAction({
   args: {
     streamId: v.id("streams"),
@@ -154,17 +177,17 @@ export const startStream = internalAction({
     responseMessageId: v.id("records")
   },
   handler: async (ctx, { streamId, chatId, responseMessageId }) => {
-    let history = (
+    let chatHistory = (
       await ctx.runQuery(internal.functions.getMessagesForChat, {
         chatId: chatId
       }))
       .sort((a, b) => a.index - b.index)
-      .map(x => ({ role: x.from, content: x.content }))
+      .map(message => ({ role: message.from, content: message.content }))
 
     try {
       const stream = await openai.chat.completions.create({
         model: 'gpt-4.1-mini', // or 'gpt-3.5-turbo'
-        messages: history,
+        messages: chatHistory,
         stream: true
       });
       for await (const chunk of stream) {
@@ -195,11 +218,16 @@ export const startStream = internalAction({
   }
 })
 
-async function onNewMessage(ctx: GenericMutationCtx<DataModel>, newMessage: MessageModel) {
+async function onNewMessage(
+  userId: Id<"users">,
+  ctx: GenericMutationCtx<DataModel>,
+  newMessage: MessageModel,
+) {
   let streamId = await ctx.db.insert("streams", {
     content: [],
     finished: false,
-    updatedAt: Date.now()
+    updatedAt: Date.now(),
+    userId
   })
   let responseMessage: MessageModel = {
     chatId: newMessage.chatId,
@@ -213,7 +241,8 @@ async function onNewMessage(ctx: GenericMutationCtx<DataModel>, newMessage: Mess
     type: "messages",
     deleted: false,
     updatedAt: Date.now(),
-    data: responseMessage
+    data: responseMessage,
+    userId,
   })
   ctx.scheduler.runAfter(0, internal.functions.startStream, {
     streamId,
@@ -222,5 +251,56 @@ async function onNewMessage(ctx: GenericMutationCtx<DataModel>, newMessage: Mess
   })
 }
 
+async function getRequiredUserId(ctx: GenericMutationCtx<DataModel> | GenericQueryCtx<DataModel>) {
+  let userId = await getAuthUserId(ctx);
+  if (!userId) throw new Error("User not authenticated")
+  return userId
+}
 
 
+async function validateMessage(
+  userId: Id<"users">,
+  message: MessageModel,
+  ctx: GenericMutationCtx<DataModel>,
+) {
+  let chat = await ctx.db.get(message.chatId)
+  let invalid = !chat || chat.userId !== userId || message.from !== "user"
+  return !invalid
+}
+
+async function validateRecordId(
+  id: string,
+  userId: Id<"users">,
+  ctx: GenericMutationCtx<DataModel>,
+) {
+  let recordId = ctx.db.normalizeId("records", id);
+  if (!recordId) return false
+  let record = await ctx.db.get(recordId)
+  if (!record) return false
+  if (record.userId !== userId) return false
+  return recordId
+}
+
+async function getUpdatedRecords(
+  userId: Id<"users">,
+  cursor: number,
+  ctx: GenericMutationCtx<DataModel>,
+) {
+  let updatedRecordsRaw = await ctx.db
+    .query("records")
+    .withIndex("by_userId_updatedAt", (q) =>
+      q.eq("userId", userId).gt("updatedAt", cursor)
+    )
+    .collect()
+  let updatedRecords = updatedRecordsRaw.map(x => {
+    let record = {
+      id: x._id,
+      state: (x.deleted ? "deleted" : "updated") as "updated" | "deleted",
+      type: x.type,
+      data: x.data
+    }
+    return record
+  })
+  let updatedAt = updatedRecordsRaw[updatedRecordsRaw.length - 1]?.updatedAt ?? 0
+  return { updatedRecords, updatedAt }
+}

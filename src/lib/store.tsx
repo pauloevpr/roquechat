@@ -8,7 +8,7 @@ import { convex } from './convex/client';
 
 
 export const wireStore = createWireStore({
-  name: "chats",
+  name: "sync",
   definition: {
     chats: {} as ChatModel,
     messages: {} as MessageModel,

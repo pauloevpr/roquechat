@@ -1,9 +1,11 @@
 import { ConvexClient } from "convex/browser";
 import { FunctionReference } from "convex/server";
-import { Accessor, Context, createContext, createEffect, createSignal, onCleanup, onMount, ParentProps, Setter, useContext } from "solid-js";
+import { Accessor, createContext, createSignal, onCleanup, onMount, ParentProps, Setter, useContext } from "solid-js";
 import { AuthTokenFetcher, ConvexAuthState, ConvexContextValue, SignInParams, SignInResult } from "./types";
 import { createStore } from "solid-js/store";
 
+// TODO: Improve error handling to show feedback to the user when something goes wrong
+//
 const StorageKeys = {
   verifier: "__solid-convex-auth:verifier",
   accessToken: "__solid-convex-auth:accessToken",
@@ -13,7 +15,6 @@ const StorageKeys = {
 const ConvexContext = createContext<ConvexContextValue>()
 
 export const ConvexProvider = (props: ParentProps<{ client: ConvexClient }>) => {
-
   let [store, setStore] = createStore<ConvexContextValue>({
     convex: props.client,
     auth: {
@@ -34,10 +35,23 @@ export const ConvexProvider = (props: ParentProps<{ client: ConvexClient }>) => 
   }
 
   async function signOut() {
-    // TODO: implement sign out
+    try {
+      tokenStorage.save(undefined)
+      await props.client.action("auth:signOut" as any, {});
+      // we do this to force a complete state reset
+      // otherwise convex for some reason wont figure out we have signed out
+      window.location.href = "/"
+    } catch (error) {
+      // From convex-auth/src/react/client.tsx:
+      // "Ignore any errors, they are usually caused by being
+      // already signed out, which is ok."
+    } finally {
+      // setStore("auth", "state", "unauthenticated")
+      console.log("Sign out complete")
+    }
   }
 
-  useAutoSignInFromCode(() => props.client, authState => {
+  useAutoSignIn(() => props.client, authState => {
     setStore("auth", "state", authState)
   })
 
@@ -54,16 +68,13 @@ export function useConvex() {
   return value
 }
 
-export function useQuery<T>(
-  query: FunctionReference<"query">,
-  args?: {}
+export function useQuery<Query extends FunctionReference<"query">>(
+  query: Query,
+  args: Query["_args"]
 ) {
   let { convex } = useConvex()
-  if (!convex) {
-    throw new Error("Convex client not registered")
-  }
   let fullArgs = args ?? {};
-  let [data, setData] = createSignal<T | undefined>()
+  let [data, setData] = createSignal<Query["_returnType"] | undefined>()
 
   const unsubber = convex!.onUpdate(query, fullArgs, (data) => {
     setData(data)
@@ -73,10 +84,10 @@ export function useQuery<T>(
     unsubber?.()
   })
 
-  return [data, setData]
+  return data
 }
 
-function useAutoSignInFromCode(
+function useAutoSignIn(
   convex: Accessor<ConvexClient>,
   setAuthState: Setter<ConvexAuthState>,
 ) {
@@ -93,33 +104,26 @@ function useAutoSignInFromCode(
 
     try {
       let result = await convex().action("auth:signIn" as any, signInParams)
-      if (result.tokens) {
-        localStorage.setItem(StorageKeys.accessToken, result.tokens.token!)
-        localStorage.setItem(StorageKeys.refreshToken, result.tokens.refreshToken!)
-      } else {
-        localStorage.removeItem(StorageKeys.accessToken)
-        localStorage.removeItem(StorageKeys.refreshToken)
-      }
+      tokenStorage.save(result.tokens)
 
-      convex().setAuth(tokenFetcher, (authUpdated) => {
+      convex().setAuth(tokenFetcher, (isAuthenticated) => {
         setAuthState(
-          authUpdated === true
+          isAuthenticated === true
             ? "authenticated"
             : "unauthenticated"
         )
       })
     } catch (e) {
       console.error(`Error signing in with code: ${e}`)
-      localStorage.removeItem(StorageKeys.accessToken)
-      localStorage.removeItem(StorageKeys.refreshToken)
+      tokenStorage.save(undefined)
       setAuthState("unauthenticated")
     }
   }
 
   function signInWithToken() {
-    convex().setAuth(tokenFetcher, (authUpdated) => {
+    convex().setAuth(tokenFetcher, (isAuthenticated) => {
       setAuthState(
-        authUpdated === true
+        isAuthenticated === true
           ? "authenticated"
           : "unauthenticated"
       )
@@ -136,7 +140,7 @@ function useAutoSignInFromCode(
 
     if (signInCode) {
       await signInWithCode(signInCode)
-    } else if (localStorage.getItem(StorageKeys.accessToken)) {
+    } else if (tokenStorage.read().accessToken) {
       signInWithToken()
     } else {
       setAuthState("unauthenticated")
@@ -151,28 +155,37 @@ const useAuthTokenFetcher = (
 ) => {
   const fetcher: AuthTokenFetcher = async ({ forceRefreshToken }) => {
     if (forceRefreshToken) {
-      let refreshToken = localStorage.getItem(StorageKeys.refreshToken)
+      let refreshToken = tokenStorage.read().refreshToken
       if (refreshToken) {
-
         try {
           let signInParams = { refreshToken }
-          let result = await convex().action("auth:signIn" as any, signInParams)
-          if (result.tokens) {
-            localStorage.setItem(StorageKeys.accessToken, result.tokens.token!)
-            localStorage.setItem(StorageKeys.refreshToken, result.tokens.refreshToken!)
-          } else {
-            localStorage.removeItem(StorageKeys.accessToken)
-            localStorage.removeItem(StorageKeys.refreshToken)
-          }
+          let result: SignInResult = await convex().action("auth:signIn" as any, signInParams)
+          tokenStorage.save(result.tokens)
         } catch (e) {
           console.error("error refreshing token", e)
         }
-
-        // TODO: implement refresh the access token
       }
     }
-    let accessToken = localStorage.getItem(StorageKeys.accessToken)
+    let accessToken = tokenStorage.read().accessToken
     return accessToken
   }
   return fetcher
+}
+
+let tokenStorage = {
+  save: (tokens: SignInResult["tokens"] | undefined | null) => {
+    if (tokens) {
+      localStorage.setItem(StorageKeys.accessToken, tokens.token!)
+      localStorage.setItem(StorageKeys.refreshToken, tokens.refreshToken!)
+    } else {
+      localStorage.removeItem(StorageKeys.accessToken)
+      localStorage.removeItem(StorageKeys.refreshToken)
+    }
+  },
+  read: () => {
+    return {
+      accessToken: localStorage.getItem(StorageKeys.accessToken),
+      refreshToken: localStorage.getItem(StorageKeys.refreshToken)
+    }
+  }
 }

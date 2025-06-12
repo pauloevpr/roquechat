@@ -13,23 +13,13 @@ import { useConvex } from "../lib/convex/provider"
 
 
 // TODO: CONTINUE: basic auth is done; next:
-// create auth provider + context to wrap protected pages
-// figure out how refresh tokens work
-// update the schema so the other tables relate to the users
 // update solid-wire store mounting to pass userid as namespace
-
-// get the userId to check if it is logged in
-// const userId = await getAuthUserId(ctx);
-
-//get user details (the _id is not here in a single field; only use to get more info
-// let user = await ctx.auth.getUserIdentity()
-
-
 
 export function ChatPage() {
   let store = wireStore.use()
-  let chatId = "j5757hka6egxk0t3z56j4y4dtx7hk0aw"
+  let chatId = "j572ccsjakvp3ztnxnmtqtc8d17hqbjp"
   let streaming = createMemo(() => false)
+  let { auth } = useConvex()
 
   let [messages, setMessages] = createStore([] as MessageModel[])
 
@@ -90,6 +80,12 @@ export function ChatPage() {
           >Send</button>
         </Show>
       </form>
+      <button
+        class="bg-gray-100 p-2 rounded-md mt-4"
+        onClick={() => auth.signOut()}
+      >
+        Sign Out
+      </button>
     </main >
   )
 }
