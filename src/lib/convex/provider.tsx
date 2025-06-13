@@ -1,6 +1,6 @@
 import { ConvexClient } from "convex/browser";
 import { FunctionReference } from "convex/server";
-import { Accessor, createContext, createSignal, onCleanup, onMount, ParentProps, Setter, useContext } from "solid-js";
+import { Accessor, createContext, createEffect, createSignal, onCleanup, onMount, ParentProps, Setter, useContext } from "solid-js";
 import { AuthTokenFetcher, ConvexAuthState, ConvexContextValue, SignInParams, SignInResult } from "./types";
 import { createStore } from "solid-js/store";
 
@@ -22,6 +22,10 @@ export const ConvexProvider = (props: ParentProps<{ client: ConvexClient }>) => 
       signIn,
       signOut,
     }
+  })
+
+  createEffect(() => {
+    console.log("auth state", store.auth.state)
   })
 
   async function signIn(provider: string, params?: SignInParams) {
@@ -103,10 +107,14 @@ function useAutoSignIn(
     let signInParams = { params: { code: signInCode }, verifier }
 
     try {
+      console.log("auth: sign in with code")
       let result = await convex().action("auth:signIn" as any, signInParams)
+      console.log("auth: sign in with code result", result)
+
       tokenStorage.save(result.tokens)
 
       convex().setAuth(tokenFetcher, (isAuthenticated) => {
+        console.log("auth: convex auth authenticated: ", isAuthenticated)
         setAuthState(
           isAuthenticated === true
             ? "authenticated"
@@ -121,7 +129,9 @@ function useAutoSignIn(
   }
 
   function signInWithToken() {
+    console.log("auth: sign in with token")
     convex().setAuth(tokenFetcher, (isAuthenticated) => {
+      console.log("auth: convex auth authenticated: ", isAuthenticated)
       setAuthState(
         isAuthenticated === true
           ? "authenticated"
@@ -129,8 +139,6 @@ function useAutoSignIn(
       )
     })
   }
-
-
 
   onMount(async () => {
     const signInCode =
@@ -143,10 +151,9 @@ function useAutoSignIn(
     } else if (tokenStorage.read().accessToken) {
       signInWithToken()
     } else {
+      console.log("auth: no sign in code or token found")
       setAuthState("unauthenticated")
     }
-
-    // TODO: CONTINUE: check if the token is stored ant try sign in
   })
 }
 
@@ -154,25 +161,31 @@ const useAuthTokenFetcher = (
   convex: Accessor<ConvexClient>,
 ) => {
   const fetcher: AuthTokenFetcher = async ({ forceRefreshToken }) => {
+    console.log("auth: fetcher called: force refresh? ", forceRefreshToken)
     if (forceRefreshToken) {
       let refreshToken = tokenStorage.read().refreshToken
       if (refreshToken) {
         try {
           let signInParams = { refreshToken }
+          console.log("auth: sign in with refresh token")
           let result: SignInResult = await convex().action("auth:signIn" as any, signInParams)
+          console.log("auth: sign in with refresh token result", result)
           tokenStorage.save(result.tokens)
         } catch (e) {
-          console.error("error refreshing token", e)
+          console.error("auth: error refreshing token", e)
         }
+      } else {
+        console.log("auth: no refresh token found")
       }
     }
     let accessToken = tokenStorage.read().accessToken
+    console.log("auth: fetcher returning access token?", !!accessToken)
     return accessToken
   }
   return fetcher
 }
 
-let tokenStorage = {
+const tokenStorage = {
   save: (tokens: SignInResult["tokens"] | undefined | null) => {
     if (tokens) {
       localStorage.setItem(StorageKeys.accessToken, tokens.token!)
