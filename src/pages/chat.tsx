@@ -1,7 +1,7 @@
 import { createEffect, createMemo, createResource, createSignal, For, Index, onCleanup, Show, untrack } from "solid-js"
 import { api } from "../../convex/_generated/api"
 import { Id } from "../../convex/_generated/dataModel"
-import { wireStore, createRecordId, Message } from "../lib/store"
+import { wireStore, Message } from "../lib/store"
 import { createStore } from "solid-js/store"
 import { Marked } from "marked";
 import "highlight.js/styles/github.css";

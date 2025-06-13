@@ -18,6 +18,9 @@ export const wireStore = createWireStore({
     chats: {} as Chat,
     messages: {} as Message,
   },
+  options: {
+    syncOnStartup: false, // we will trigger sync manually as convex sends us new updates
+  },
   sync: async ({ records, namespace, syncCursor }) => {
     let chats = records.filter(x => x.type === "chats").map(item => {
       let record = {
@@ -48,7 +51,8 @@ export const wireStore = createWireStore({
       id: record.id,
       type: record.type,
       state: record.state,
-      // data.id is only used locally; we want it to be the same as the record id given by the server to avoid having client-side IDs
+      // we want data.id to be the server-assigned ID to avoid having client-side IDs
+      // data.id is only used locally; we will remove it when syncing back to the server
       data: {
         ...record.data,
         id: record.id,
@@ -64,10 +68,3 @@ export const wireStore = createWireStore({
   }
 })
 
-
-export function createRecordId() {
-  const timestamp = new Date().getTime().toString(); // current timestamp
-  let randomPart = Math.random().toString(36).substring(2, 10); // random part
-  randomPart = (timestamp + randomPart).substring(0, 20); // ensure total length is 20
-  return `clientid:${randomPart}`;
-}

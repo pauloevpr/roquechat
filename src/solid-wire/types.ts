@@ -53,6 +53,9 @@ export type SyncResponse = { records: SyncedRecord[], syncCursor?: string }
 export type WireStoreConfig<Definition extends WireStoreDefinition, Extension> = {
 	name: string,
 	definition: Definition,
+	options?: {
+		syncOnStartup?: boolean
+	},
 	extend?: (store: WireStore<Definition>) => Extension
 	sync: (request: { records: UnsyncedRecord<Definition>[], namespace: string, syncCursor?: string }) => Promise<SyncResponse>,
 }

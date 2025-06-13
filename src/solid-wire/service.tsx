@@ -11,6 +11,7 @@ export function WireStoreService<Definition extends WireStoreDefinition, Extenti
 		hooks?: Hooks[]
 	}>
 ) {
+	let options = createMemo(() => props.config.options || defaultOptions)
 	let cursorKey = `wire-store:${props.config.name}:${props.namespace}:sync-cursor`
 	let context = createMemo(() => {
 		let name = `wire-store:${props.config.name}:${props.namespace}`
@@ -59,7 +60,9 @@ export function WireStoreService<Definition extends WireStoreDefinition, Extenti
 	}
 
 	onMount(() => {
-		triggerSync()
+		if (options().syncOnStartup) {
+			triggerSync()
+		}
 	})
 
 	onCleanup(() => {
@@ -137,4 +140,9 @@ export function WireStoreService<Definition extends WireStoreDefinition, Extenti
 			{props.children}
 		</WireStoreContext.Provider>
 	)
+}
+
+
+const defaultOptions = {
+	syncOnStartup: true,
 }
