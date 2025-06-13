@@ -6,6 +6,7 @@ import { ChatSchema, MessageModel, MessageSchema, RecordType, RecordWithMessageD
 import { OpenAI } from "openai";
 import { GenericMutationCtx, GenericQueryCtx } from "convex/server";
 import { getAuthUserId } from "@convex-dev/auth/server";
+import { createChatCompletion, streamChatCompletion } from "./llm";
 
 const openai = new OpenAI({
   // apiKey: process.env.OPENAI_API_KEY
@@ -187,16 +188,11 @@ export const startStream = internalAction({
       }))
       .sort((a, b) => a._creationTime - b._creationTime)
       .map(message => ({ role: message.data.from, content: message.data.content }))
+
     let chatTitle: string | undefined = undefined
 
     try {
-      const response = await openai.chat.completions.create({
-        model: 'gpt-4.1-mini', // or 'gpt-3.5-turbo'
-        messages: chatHistory,
-        stream: true
-      });
-      for await (const chunk of response) {
-        const content = chunk.choices?.[0]?.delta?.content;
+      await streamChatCompletion('gpt-4.1-mini', chatHistory, async (content) => {
         if (content) {
           await ctx.runMutation(internal.functions.appendStreamContent, {
             streamId,
@@ -206,18 +202,16 @@ export const startStream = internalAction({
             chatId,
           })
         }
-      }
+      })
       if (chatHistory.length <= 2) {
         let responseContent = await ctx.runQuery(internal.functions.getStreamContent, { streamId })
-        const response = await openai.chat.completions.create({
-          model: 'gpt-4.1-mini', // or 'gpt-3.5-turbo'
-          messages: [
+        chatTitle = await createChatCompletion('gpt-4.1-mini',
+          [
             ...chatHistory,
             { role: "assistant", content: responseContent },
             { role: "user", content: "Based on our conversation, give me a short title (max 5 words) for this chat." }
           ],
-        });
-        chatTitle = response.choices[0].message.content ?? undefined
+        )
       }
       await ctx.runMutation(internal.functions.appendStreamContent, {
         streamId,
@@ -238,7 +232,6 @@ export const startStream = internalAction({
     }
   }
 })
-
 
 export const getStreamContent = internalQuery({
   args: {
@@ -314,13 +307,11 @@ export const deleteStream = internalMutation({
   }
 })
 
-
 async function getRequiredUserId(ctx: GenericMutationCtx<DataModel> | GenericQueryCtx<DataModel>) {
   let userId = await getAuthUserId(ctx);
   if (!userId) throw new Error("User not authenticated")
   return userId
 }
-
 
 async function getSyncUpdates(
   ctx: GenericMutationCtx<DataModel> | GenericQueryCtx<DataModel>,
