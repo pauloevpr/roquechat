@@ -11,31 +11,34 @@ import DOMPurify from 'dompurify';
 import { useConvex } from "../lib/convex/provider"
 import { createAsync, useSearchParams } from "@solidjs/router"
 
-
 // TODO: CONTINUE: since we are syncing live, there is no reason for solid-wire to call sync at startup
 
 export function ChatPage() {
+  let { convex } = useConvex()
   let store = wireStore.use()
   let [searchParams, setSearchParams] = useSearchParams()
   let chatId = createMemo(() => searchParams.chatId as Id<"records"> | undefined)
   let streaming = createMemo(() => false)
-  let { auth, convex } = useConvex()
-
   let [messages, setMessages] = createStore([] as Message[])
+  let refs = {
+    main: undefined as undefined | HTMLDivElement,
+    input: undefined as undefined | HTMLInputElement
+  }
 
-  createEffect((prevChatId: Id<"records"> | undefined) => {
-    let id = chatId()
-    let chatChanged = id !== prevChatId
-    if (!id) {
+  createEffect((previousChat: Id<"records"> | undefined) => {
+    let currentChat = chatId()
+    let chatChanged = currentChat !== previousChat
+    if (!currentChat) {
       untrack(() => {
         setMessages([])
       })
     } else {
       store.messages.all().then(updatedMessages => {
-        updatedMessages = updatedMessages.filter(x => x.chatId === id).sort((a, b) => a.createdAt - b.createdAt)
+        updatedMessages = updatedMessages.filter(x => x.chatId === currentChat).sort((a, b) => a.createdAt - b.createdAt)
         untrack(() => {
           if (chatChanged) {
             setMessages(updatedMessages)
+            scrollToBottom()
           } else {
             // we want to append only new messages to the list to minimize computation
             let replaceFrom = messages.length
@@ -49,7 +52,11 @@ export function ChatPage() {
     return chatId()
   })
 
-  let inputRef: HTMLInputElement | undefined = undefined
+  function scrollToBottom() {
+    if (refs.main) {
+      refs.main?.scrollTo({ top: refs.main.scrollHeight, behavior: "smooth" })
+    }
+  }
 
   async function onSubmit(e: SubmitEvent) {
     e.preventDefault()
@@ -57,7 +64,7 @@ export function ChatPage() {
     const formData = new FormData(form)
     const content = (formData.get('message') as string).trim()
     form.reset()
-    inputRef?.focus()
+    refs.input?.focus()
     if (!content) return
 
     // add a message to the list right away for optimistic update
@@ -86,40 +93,42 @@ export function ChatPage() {
   }
 
   return (
-    <main class="p-10">
+    <div class="grid grid-cols-[auto_1fr]">
       <ChatList />
-      <div class="space-y-4 py-6">
-        <Index each={messages}>
-          {(message) => (
-            <MessageItem message={message()} />
-          )}
-        </Index >
-      </div >
-      <form onSubmit={onSubmit}>
-        <input type="text" class="border-2 border-gray-300 rounded-md p-2"
-          name="message"
-          classList={{ "bg-gray-200": streaming() }}
-          required
-          ref={inputRef} />
-        <Show when={!streaming()}>
-          <button
-            type="submit"
-            disabled={streaming()}
-          >Send</button>
-        </Show>
-      </form>
-      <button
-        class="bg-gray-100 p-2 rounded-md mt-4"
-        onClick={() => auth.signOut()}
-      >
-        Sign Out
-      </button>
-    </main >
+      <main
+        ref={refs.main}
+        class="p-10 overflow-y-auto h-screen">
+        <div class="space-y-4 py-6">
+          <Index each={messages}>
+            {(message) => (
+              <MessageItem message={message()} />
+            )}
+          </Index >
+        </div >
+        <form onSubmit={onSubmit}>
+          <input type="text" class="border-2 border-gray-300 rounded-md p-2"
+            name="message"
+            classList={{ "bg-gray-200": streaming() }}
+            required
+            ref={refs.input} />
+          <Show when={!streaming()}>
+            <button
+              type="submit"
+              disabled={streaming()}
+            >Send</button>
+          </Show>
+        </form>
+      </main >
+    </div>
   )
 }
 
 function ChatList() {
+  let { auth, convex } = useConvex()
+  let [searchParams, setSearchParams] = useSearchParams()
   let store = wireStore.use()
+  let chatId = createMemo(() => searchParams.chatId as Id<"records"> | undefined)
+
   let chats = createAsync(async () => {
     let chats = await store.chats.all()
     chats.sort((a, b) => b.updatedAt - a.updatedAt)
@@ -127,19 +136,31 @@ function ChatList() {
   })
 
   return (
-    <aside class="border p-4">
-      <ul>
+    <aside class="overflow-y-auto h-screen p-6 border">
+      <ul class="space-y-2">
         <li>
           <a href="/">New Chat</a>
         </li>
         <For each={chats()}>
           {(chat) => (
             <li>
-              <a href={`/?chatId=${chat.id}`}>{chat.title}</a>
+              <a
+                classList={{
+                  "font-semibold": chatId() === chat.id
+                }}
+                class="whitespace-nowrap"
+                href={`/?chatId=${chat.id}`}>{chat.title}</a>
             </li>
           )}
         </For>
       </ul>
+
+      <button
+        class="bg-gray-100 p-2 rounded-md mt-4"
+        onClick={() => auth.signOut()}
+      >
+        Sign Out
+      </button>
     </aside>
   )
 }
@@ -193,13 +214,6 @@ function MessageItem(props: { message: Message }) {
     }
   })
 
-  createEffect((count) => {
-    if (count !== content().length) {
-      window.scrollTo(0, document.body.scrollHeight)
-    }
-    return content().length
-  }, 0)
-
   onCleanup(() => {
     try {
       unsubscribe?.()
@@ -209,8 +223,8 @@ function MessageItem(props: { message: Message }) {
   })
 
   return (
-    <article class="prose border-2 border-gray-300 rounded-md p-2">
-      <div innerHTML={html()} />
+    <article class=" border-2 border-gray-300 rounded-md p-2">
+      <div class="prose" innerHTML={html()} />
     </article>
   )
 }
