@@ -3,13 +3,10 @@ import { api } from "../../convex/_generated/api"
 import { Id } from "../../convex/_generated/dataModel"
 import { wireStore, Message } from "../lib/store"
 import { createStore } from "solid-js/store"
-import { Marked } from "marked";
 import "highlight.js/styles/github.css";
-import hljs from 'highlight.js';
-import { markedHighlight } from 'marked-highlight';
-import DOMPurify from 'dompurify';
 import { useConvex } from "../lib/convex/provider"
 import { createAsync, useSearchParams } from "@solidjs/router"
+import { createMarked } from "../components/marked"
 
 // TODO: CONTINUE: since we are syncing live, there is no reason for solid-wire to call sync at startup
 
@@ -54,7 +51,7 @@ export function ChatPage() {
 
   function scrollToBottom() {
     if (refs.main) {
-      refs.main?.scrollTo({ top: refs.main.scrollHeight, behavior: "smooth" })
+      refs.main?.scrollTo({ top: refs.main.scrollHeight, behavior: "instant" })
     }
   }
 
@@ -124,8 +121,8 @@ export function ChatPage() {
 }
 
 function ChatList() {
-  let { auth, convex } = useConvex()
-  let [searchParams, setSearchParams] = useSearchParams()
+  let { auth } = useConvex()
+  let [searchParams] = useSearchParams()
   let store = wireStore.use()
   let chatId = createMemo(() => searchParams.chatId as Id<"records"> | undefined)
 
@@ -165,27 +162,10 @@ function ChatList() {
   )
 }
 
-const marked = new Marked(
-  markedHighlight({
-    emptyLangClass: 'hljs',
-    langPrefix: 'hljs language-',
-    highlight(code, lang, info) {
-      const language = hljs.getLanguage(lang) ? lang : 'plaintext';
-      return hljs.highlight(code, { language }).value;
-    }
-  }),
-);
-
-marked.use({
-  hooks: {
-    postprocess: (html: string) => DOMPurify.sanitize(html)
-  }
-});
-
 
 function MessageItem(props: { message: Message }) {
+  let marked = createMarked()
   let { convex } = useConvex()
-  let store = wireStore.use()
   let [dynamicContent, setDynamicContent] = createSignal<string[] | undefined>(undefined)
   let content = createMemo(() => {
     return dynamicContent() || [props.message.content]
