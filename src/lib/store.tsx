@@ -49,7 +49,6 @@ export const wireStore = createWireStore({
       // data.id is only used locally; we want it to be the same as the record id given by the server to avoid having client-side IDs
       data: { ...record.data, id: record.id }
     }))
-    console.log("### sync count", updatedRecords.length)
     return {
       records: updatedRecords,
       syncCursor: result.syncCursor,

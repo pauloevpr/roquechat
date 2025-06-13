@@ -5,6 +5,7 @@ import { authTables } from "@convex-dev/auth/server";
 export const RecordIdSchema = v.id("records")
 
 export const ChatSchema = v.object({
+  title: v.string(),
   createdAt: v.number(),
   updatedAt: v.number(),
 })
