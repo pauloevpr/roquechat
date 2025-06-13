@@ -5,16 +5,15 @@ import { authTables } from "@convex-dev/auth/server";
 export const RecordIdSchema = v.id("records")
 
 export const ChatSchema = v.object({
-  id: v.optional(v.string()),
   createdAt: v.number(),
+  updatedAt: v.number(),
 })
 
 export const MessageSchema = v.object({
-  id: v.optional(v.string()),
+  createdAt: v.number(),
   content: v.string(), // TODO: this should be an array of strings so we dont have to join them chunks in the server
   streaming: v.optional(v.boolean()),
   chatId: RecordIdSchema,
-  index: v.number(),
   streamId: v.optional(v.id("streams")),
   from: v.union(v.literal("user"), v.literal("assistant")),
 })

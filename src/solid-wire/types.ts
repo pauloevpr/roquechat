@@ -24,7 +24,6 @@ export type UnsyncedRecord<Definition extends Record<string, any>> = {
 
 export type SyncedRecord = {
 	id: string
-	alternativeId?: string
 	state: "updated" | "deleted"
 	type: string
 	data: any
@@ -34,7 +33,7 @@ export const WireStoreContext = createContext<WireStoreContextValue>()
 
 export type WireStoreContextValue = {
 	idb: Idb
-	sync(): Promise<void>
+	sync(fromResponse?: SyncResponse): Promise<void>
 }
 
 export type WireStoreDefinition = Record<string, any>
@@ -46,11 +45,13 @@ export type WireStoreAPI<Definition extends WireStoreDefinition, Type extends ke
 	all(): Promise<Definition[Type][]>
 }
 
+export type SyncResponse = { records: SyncedRecord[], syncCursor?: string }
+
 export type WireStoreConfig<Definition extends WireStoreDefinition, Extension> = {
 	name: string,
 	definition: Definition,
 	extend?: (store: WireStore<Definition>) => Extension
-	sync: (request: { records: UnsyncedRecord<Definition>[], namespace: string, syncCursor?: string }) => Promise<{ records: SyncedRecord[], syncCursor?: string }>,
+	sync: (request: { records: UnsyncedRecord<Definition>[], namespace: string, syncCursor?: string }) => Promise<SyncResponse>,
 }
 
 export type WireStore<Definition extends WireStoreDefinition> = {

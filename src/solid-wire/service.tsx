@@ -1,5 +1,5 @@
 import { createEffect, createMemo, onCleanup, onMount, ParentProps } from "solid-js"
-import { Hooks, IdbRecord, UnsyncedRecord, WireStoreConfig, WireStoreContext, WireStoreContextValue, WireStoreDefinition } from "./types"
+import { Hooks, IdbRecord, SyncResponse, UnsyncedRecord, WireStoreConfig, WireStoreContext, WireStoreContextValue, WireStoreDefinition } from "./types"
 import { Idb, useIdb } from "./idb"
 
 export function WireStoreService<Definition extends WireStoreDefinition, Extention>(
@@ -11,11 +11,12 @@ export function WireStoreService<Definition extends WireStoreDefinition, Extenti
 		hooks?: Hooks[]
 	}>
 ) {
+	let cursorKey = `wire-store:${props.config.name}:${props.namespace}:sync-cursor`
 	let context = createMemo(() => {
 		let name = `wire-store:${props.config.name}:${props.namespace}`
 		let context: WireStoreContextValue = {
 			idb: useIdb(name, props.recordTypes, props.hooks),
-			sync: triggerSync
+			sync: triggerSync,
 		}
 		return context
 	})
@@ -63,11 +64,19 @@ export function WireStoreService<Definition extends WireStoreDefinition, Extenti
 		clearInterval(periodicSyncInterval)
 	})
 
-	async function triggerSync() {
+	async function triggerSync(fromResponse?: SyncResponse) {
+		if (fromResponse) {
+			try {
+				await commitSyncResult(fromResponse)
+				return
+			} catch (e) {
+				console.error(`SolidWire: error committing sync result for store ${props.config.name} in namespace ${props.namespace}`, e)
+			}
+		}
+
 		if (syncing) return
 
 		syncing = true
-		let cursorKey = `wire-store:${props.config.name}:${props.namespace}:sync-cursor`
 		let idb = context().idb.internal
 		let namespace = props.namespace
 
@@ -83,32 +92,40 @@ export function WireStoreService<Definition extends WireStoreDefinition, Extenti
 			})
 
 			let syncCursor = localStorage.getItem(cursorKey) || undefined
-			let { records, syncCursor: updatedSyncCursor } = await props.config.sync(
+			let result = await props.config.sync(
 				{ records: unsynced, namespace, syncCursor }
 			)
 
-			let updated = records
-				.filter(record => record.state === "updated")
-				.map<IdbRecord & { alternativeId?: string }>(record => ({
-					id: record.id,
-					alternativeId: record.alternativeId,
-					type: record.type,
-					data: record.data,
-				}))
-			await idb.put(...updated)
+			await commitSyncResult(result)
 
-			let deleted = records.filter(record => record.state === "deleted").map(record => record.id)
-			await idb.purge(deleted)
-
-			if (updatedSyncCursor !== undefined && updatedSyncCursor !== null) {
-				localStorage.setItem(cursorKey, updatedSyncCursor)
-			} else {
-				localStorage.removeItem(cursorKey)
-			}
-
+		} catch (e) {
+			console.error(`SolidWire: error syncing store ${props.config.name} in namespace ${props.namespace}`, e)
 		} finally {
 			syncing = false
 		}
+	}
+
+	async function commitSyncResult(result: SyncResponse) {
+		let idb = context().idb.internal
+		let { records, syncCursor: updatedSyncCursor } = result
+		let updated = records
+			.filter(record => record.state === "updated")
+			.map<IdbRecord>(record => ({
+				id: record.id,
+				type: record.type,
+				data: record.data,
+			}))
+		await idb.put(...updated)
+
+		let deleted = records.filter(record => record.state === "deleted").map(record => record.id)
+		await idb.purge(deleted)
+
+		if (updatedSyncCursor !== undefined && updatedSyncCursor !== null) {
+			localStorage.setItem(cursorKey, updatedSyncCursor)
+		} else {
+			localStorage.removeItem(cursorKey)
+		}
+
 	}
 
 	return (

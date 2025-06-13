@@ -95,10 +95,10 @@ export function useIdb<Definition extends WireStoreDefinition>(
 		let recordTypes = new Set(records.filter(item => !!item).map(item => item!.type))
 		await Promise.all(ids.map((id) => new Promise((resolve, reject) => {
 			const request = db.transaction("records", "readwrite").objectStore("records").delete(id)
-			request.onsuccess = function () {
+			request.onsuccess = function() {
 				resolve(undefined);
 			};
-			request.onerror = function (event: any) {
+			request.onerror = function(event: any) {
 				reject("Error deleting record: " + event.target.error);
 			};
 		})))
@@ -108,7 +108,7 @@ export function useIdb<Definition extends WireStoreDefinition>(
 	}
 
 	async function put(
-		...records: (IdbRecord & { alternativeId?: string })[]
+		...records: IdbRecord[]
 	): Promise<void> {
 		if (!records.length) return
 		let recordTypes = new Set(records.map(item => item.type))
@@ -116,20 +116,6 @@ export function useIdb<Definition extends WireStoreDefinition>(
 		await Promise.all(
 			records.map((record) => new Promise(async (resolve, reject) => {
 				await callHooks("beforeSave", record)
-
-				if (record.alternativeId) {
-					let alternativeId = record.alternativeId
-					await new Promise((resolve, reject) => {
-						let request = db.transaction("records", "readwrite").objectStore("records").delete(alternativeId)
-						request.onsuccess = () => {
-							resolve(undefined)
-						}
-						request.onerror = (e: any) => {
-							reject(`error when deleting record with alternative id ${alternativeId}: ${e.target.error}`)
-						}
-					})
-				}
-
 				const request = db.transaction("records", "readwrite").objectStore("records").put(record)
 				request.onsuccess = () => {
 					resolve(undefined)

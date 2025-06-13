@@ -2,7 +2,7 @@ import { createEffect, createMemo, createResource, createSignal, Index, onCleanu
 import { api } from "../../convex/_generated/api"
 import type { MessageModel } from "../../convex/schema" // TODO: maybe we should import from _generated
 import { Id } from "../../convex/_generated/dataModel"
-import { wireStore, createRecordId } from "../lib/store"
+import { wireStore, createRecordId, Message } from "../lib/store"
 import { createStore } from "solid-js/store"
 import { Marked } from "marked";
 import "highlight.js/styles/github.css";
@@ -10,31 +10,27 @@ import hljs from 'highlight.js';
 import { markedHighlight } from 'marked-highlight';
 import DOMPurify from 'dompurify';
 import { useConvex } from "../lib/convex/provider"
+import { useSearchParams } from "@solidjs/router"
 
-
-// TODO: CONTINUE: basic auth is done; next:
-// update solid-wire store mounting to pass userid as namespace
 
 export function ChatPage() {
   let store = wireStore.use()
-  let chatId = "j572ccsjakvp3ztnxnmtqtc8d17hqbjp"
+  let [searchParams, setSearchParams] = useSearchParams()
+  let chatId = createMemo(() => searchParams.chatId as Id<"records"> | undefined)
   let streaming = createMemo(() => false)
-  let { auth } = useConvex()
+  let { auth, convex } = useConvex()
 
   let [messages, setMessages] = createStore([] as MessageModel[])
 
   createEffect(async () => {
+    if (!chatId()) return
     let items = (await store.messages.all())
-      .filter(x => x.chatId === chatId)
-      .sort((a, b) => a.index - b.index)
-    if (messages.length) {
-      let newMessages: MessageModel[] = []
-      for (let i = messages.length; i < items.length; i++) {
-        newMessages.push(items[i])
-      }
-      setMessages(prev => [...prev, ...newMessages])
-    } else {
-      setMessages(items)
+      .filter(x => x.chatId === chatId())
+      .sort((a, b) => a.createdAt - b.createdAt)
+    // we want to only append new messages to the list to minimize computation
+    let replaceFrom = messages.length
+    for (let i = replaceFrom; i < items.length; i++) {
+      setMessages(i, items[i])
     }
   })
 
@@ -44,18 +40,35 @@ export function ChatPage() {
     e.preventDefault()
     let form = e.target as HTMLFormElement
     const formData = new FormData(form)
-    const message = (formData.get('message') as string).trim()
+    const content = (formData.get('message') as string).trim()
     form.reset()
     inputRef?.focus()
-    if (!message) return
-    let nextIndex = messages.length
-    let id = createRecordId()
-    await store.messages.set(id, {
-      content: message,
-      chatId: chatId as Id<"records">,
-      index: nextIndex,
-      from: "user"
+    if (!content) return
+
+    // add a message to the list right away for optimistic update
+    let lastMessage = messages[messages.length - 1]
+    let newMessageIndex = messages.length
+    setMessages(prev => [...prev, {
+      content: content,
+      chatId: chatId() as Id<"records">,
+      from: "user",
+      id: "",
+      createdAt: (lastMessage?.createdAt || 0) + 1, // to assure the message appears at the bottom
+    }])
+
+    let result = await convex.mutation(api.functions.sendMessage, {
+      message: content,
+      chatId: chatId()
     })
+
+    // update the message with the actual one from the server
+    setMessages(newMessageIndex, result.message)
+
+    await store.sync(result.sync)
+
+    if (!chatId()) {
+      setSearchParams({ chatId: result.chatId }, { replace: true })
+    }
   }
 
   return (
@@ -90,6 +103,7 @@ export function ChatPage() {
   )
 }
 
+
 const marked = new Marked(
   markedHighlight({
     emptyLangClass: 'hljs',
@@ -121,6 +135,10 @@ function MessageItem(props: { message: MessageModel }) {
   })
 
   let unsubscribe: Function | undefined = undefined
+
+  createEffect(() => {
+    console.log("message updated: ", props.message)
+  })
 
   createEffect(() => {
     if (unsubscribe) return
@@ -157,26 +175,3 @@ function MessageItem(props: { message: MessageModel }) {
     </article>
   )
 }
-
-// const result = await client.action(
-//   "auth:signIn" as unknown as SignInAction,
-//   { provider, params, verifier },
-// );
-// if (result.redirect !== undefined) {
-//   const url = new URL(result.redirect);
-//   await storageSet(VERIFIER_STORAGE_KEY, result.verifier!);
-//   // Do not redirect in React Native
-//   // Using a deprecated property because it's the only explicit check
-//   // available, and they set it explicitly and intentionally for this
-//   // purpose.
-//   if (navigator.product !== "ReactNative") {
-//     window.location.href = url.toString();
-//   }
-//   return { signingIn: false, redirect: url };
-// } else if (result.tokens !== undefined) {
-//   const { tokens } = result;
-//   logVerbose(`signed in and got tokens, is null: ${tokens === null}`);
-//   await setToken({ shouldStore: true, tokens });
-//   return { signingIn: result.tokens !== null };
-// }
-// return { signingIn: false };

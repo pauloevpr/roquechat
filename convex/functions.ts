@@ -11,14 +11,11 @@ const openai = new OpenAI({
   // apiKey: process.env.OPENAI_API_KEY
 });
 
-
 export const getCurrentUser = query({
   args: {},
   handler: async (ctx) => {
     let userId = await getRequiredUserId(ctx);
     let user = await ctx.db.get(userId)!
-    console.log("user", user)
-    console.log("userId", userId)
     return {
       id: userId,
       name: user?.name || "",
@@ -38,114 +35,126 @@ export const getStream = query({
   }
 })
 
-let ChatSyncSchema = v.object({
-  id: v.string(),
-  state: v.union(v.literal("updated"), v.literal("deleted")),
-  data: ChatSchema,
-})
-
-let MessageSyncSchema = v.object({
-  id: v.string(),
-  state: v.union(v.literal("updated"), v.literal("deleted")),
-  data: MessageSchema,
-})
-
 export const sync = mutation({
   args: {
     cursor: v.optional(v.number()),
-    chats: v.array(ChatSyncSchema),
-    messages: v.array(MessageSyncSchema)
+    chats: v.array(
+      v.object({
+        id: v.id("records"),
+        state: v.union(v.literal("updated"), v.literal("deleted")),
+        data: ChatSchema,
+      })
+    ),
+    messages: v.array(
+      v.object({
+        id: v.id("records"),
+        state: v.union(v.literal("updated"), v.literal("deleted")),
+        data: MessageSchema,
+      })
+    )
   },
   handler: async (ctx, args) => {
+    // TODO: should we limit the amount of records we proccess at a time?
     let userId = await getRequiredUserId(ctx)
     let allRecords = [
       ...args.chats.map(x => ({ ...x, type: "chats" as RecordType })),
       ...args.messages.map(x => ({ ...x, type: "messages" as RecordType })),
     ]
-    let newMessage: MessageModel | undefined = undefined
     for (let record of allRecords) {
-      let isNewRecord = record.id.startsWith("clientid:");
-      if (isNewRecord) {
-        record.data.id = record.id
-        if (record.type === "messages") {
-          let message = record.data as MessageModel
-          let valid = await validateMessage(userId, message, ctx)
-          if (valid) {
-            newMessage = message
-          } else {
-            console.warn(`Unable to sync message ${record.id} for user ${userId}. Message failed validation.`)
-            record.state = "deleted"
-          }
-        }
-        await ctx.db.insert("records", {
-          type: record.type,
-          deleted: false,
-          updatedAt: Date.now(),
-          data: record.data,
-          userId: userId
-        })
-      } else {
-        let recordId = await validateRecordId(record.id, userId, ctx)
-        if (!recordId) {
-          console.warn(`Unable to sync record ${record.id} for user ${userId}. Record failed validation.`)
-          continue
-        }
-        await ctx.db.patch(recordId, {
-          deleted: record.state === "deleted",
-          updatedAt: Date.now(),
-          data: record.data
-        })
+      let existingRecord = await ctx.db.get(record.id)
+      if (!existingRecord) {
+        console.warn(`Unable to sync record ${record.id} for user ${userId}. Record does not exist.`)
+        continue
       }
-    }
-    // we intentionally only want to respond to one single message per sync to help prevent DDoS
-    if (newMessage) {
-      await onNewMessage(userId, ctx, newMessage)
+      if (existingRecord.userId !== userId) {
+        console.warn(`Unable to sync record ${record.id} for user ${userId}. Record does not belong to user.`)
+        continue
+      }
+      await ctx.db.patch(record.id, {
+        deleted: record.state === "deleted",
+        updatedAt: Date.now(),
+        data: record.data
+      })
     }
     let cursor = args.cursor ?? 0
-    let { updatedRecords, updatedAt } = await getUpdatedRecords(userId, cursor, ctx)
+    return await getSyncUpdates(ctx, userId, cursor)
+  }
+})
+
+export const sendMessage = mutation({
+  args: {
+    message: v.string(),
+    chatId: v.optional(v.id("records"))
+  },
+  handler: async (ctx, { message, chatId }) => {
+    let userId = await getRequiredUserId(ctx)
+    let now = Date.now()
+    if (chatId) {
+      let chat = await ctx.db.get(chatId)
+      let invalidChat = !chat || chat.type !== "chats" || chat.userId !== userId
+      if (invalidChat) throw new Error(`Chat ${chatId} not found`)
+    } else {
+      chatId = await ctx.db.insert("records", {
+        type: "chats",
+        updatedAt: now,
+        deleted: false,
+        data: {
+          createdAt: now,
+          updatedAt: now,
+        },
+        userId
+      })
+    }
+    let newMessage: MessageModel = {
+      chatId,
+      content: message,
+      streaming: false,
+      streamId: undefined,
+      from: "user",
+      createdAt: now,
+    }
+    await ctx.db.insert("records", {
+      type: "messages",
+      updatedAt: now,
+      deleted: false,
+      data: newMessage,
+      userId
+    })
+    let streamId = await ctx.db.insert("streams", {
+      content: [],
+      finished: false,
+      updatedAt: now,
+      userId
+    })
+    let responseMessageId = await ctx.db.insert("records", {
+      type: "messages",
+      deleted: false,
+      updatedAt: now,
+      data: {
+        chatId: newMessage.chatId,
+        content: "",
+        streaming: true,
+        streamId,
+        from: "assistant",
+        createdAt: now + 1,
+      },
+      userId,
+    })
+    ctx.scheduler.runAfter(0, internal.functions.startStream, {
+      streamId,
+      chatId,
+      responseMessageId
+    })
+    let syncCursor = now - 1
+    let result = await getSyncUpdates(ctx, userId, syncCursor)
     return {
-      records: updatedRecords,
-      syncCursor: updatedAt,
+      sync: result,
+      chatId,
+      message: { ...newMessage, id: responseMessageId }
     }
   }
 })
 
-export const appendStreamContent = internalMutation({
-  args: {
-    streamId: v.id("streams"),
-    messageId: v.id("records"),
-    content: v.string(),
-    final: v.boolean()
-  },
-  handler: async (ctx, { streamId, messageId, content, final }) => {
-    let stream = await ctx.db.get(streamId)
-    if (!stream) throw new Error(`Stream ${streamId} not found`)
-    let newContent = [...stream.content, content]
-    await ctx.db.patch(streamId, {
-      content: newContent,
-      finished: final,
-      updatedAt: Date.now()
-    })
-    if (final) {
-      let message = await ctx.db.get(messageId)
-      if (!message) throw new Error(`Message ${messageId} not found`)
-      if (message.type !== "messages") throw new Error(`Message ${messageId} is not a message`)
-      let messageData = message.data as MessageModel
-      await ctx.db.patch(messageId, {
-        data: {
-          ...messageData,
-          content: newContent.join(""),
-          streaming: false,
-          streamId: undefined
-        }
-      })
-      let deleteAfter = 2 * 60 * 60 * 1000 // 2 hours
-      await ctx.scheduler.runAfter(deleteAfter, internal.functions.deleteStream, {
-        streamId
-      })
-    }
-  }
-})
 
 export const getMessagesForChat = internalQuery({
   args: {
@@ -161,15 +170,6 @@ export const getMessagesForChat = internalQuery({
 })
 
 
-export const deleteStream = internalMutation({
-  args: {
-    streamId: v.id("streams")
-  },
-  handler: async (ctx, { streamId }) => {
-    await ctx.db.delete(streamId)
-  }
-})
-
 export const startStream = internalAction({
   args: {
     streamId: v.id("streams"),
@@ -181,7 +181,7 @@ export const startStream = internalAction({
       await ctx.runQuery(internal.functions.getMessagesForChat, {
         chatId: chatId
       }))
-      .sort((a, b) => a.index - b.index)
+      .sort((a, b) => a.createdAt - b.createdAt)
       .map(message => ({ role: message.from, content: message.content }))
 
     try {
@@ -218,38 +218,53 @@ export const startStream = internalAction({
   }
 })
 
-async function onNewMessage(
-  userId: Id<"users">,
-  ctx: GenericMutationCtx<DataModel>,
-  newMessage: MessageModel,
-) {
-  let streamId = await ctx.db.insert("streams", {
-    content: [],
-    finished: false,
-    updatedAt: Date.now(),
-    userId
-  })
-  let responseMessage: MessageModel = {
-    chatId: newMessage.chatId,
-    content: "",
-    index: newMessage.index + 0.5,
-    streaming: true,
-    streamId,
-    from: "assistant"
+export const appendStreamContent = internalMutation({
+  args: {
+    streamId: v.id("streams"),
+    messageId: v.id("records"),
+    content: v.string(),
+    final: v.boolean()
+  },
+  handler: async (ctx, { streamId, messageId, content, final }) => {
+    let stream = await ctx.db.get(streamId)
+    if (!stream) throw new Error(`Stream ${streamId} not found`)
+    let newContent = [...stream.content, content]
+    await ctx.db.patch(streamId, {
+      content: newContent,
+      finished: final,
+      updatedAt: Date.now()
+    })
+    if (final) {
+      let message = await ctx.db.get(messageId)
+      if (!message) throw new Error(`Message ${messageId} not found`)
+      if (message.type !== "messages") throw new Error(`Message ${messageId} is not a message`)
+      let messageData = message.data as MessageModel
+      await ctx.db.patch(messageId, {
+        updatedAt: Date.now(),
+        data: {
+          ...messageData,
+          content: newContent.join(""),
+          streaming: false,
+          streamId: undefined
+        }
+      })
+      let deleteAfter = 2 * 60 * 60 * 1000 // 2 hours
+      await ctx.scheduler.runAfter(deleteAfter, internal.functions.deleteStream, {
+        streamId
+      })
+    }
   }
-  let responseMessageId = await ctx.db.insert("records", {
-    type: "messages",
-    deleted: false,
-    updatedAt: Date.now(),
-    data: responseMessage,
-    userId,
-  })
-  ctx.scheduler.runAfter(0, internal.functions.startStream, {
-    streamId,
-    chatId: newMessage.chatId,
-    responseMessageId
-  })
-}
+})
+
+export const deleteStream = internalMutation({
+  args: {
+    streamId: v.id("streams")
+  },
+  handler: async (ctx, { streamId }) => {
+    await ctx.db.delete(streamId)
+  }
+})
+
 
 async function getRequiredUserId(ctx: GenericMutationCtx<DataModel> | GenericQueryCtx<DataModel>) {
   let userId = await getAuthUserId(ctx);
@@ -258,33 +273,10 @@ async function getRequiredUserId(ctx: GenericMutationCtx<DataModel> | GenericQue
 }
 
 
-async function validateMessage(
-  userId: Id<"users">,
-  message: MessageModel,
+async function getSyncUpdates(
   ctx: GenericMutationCtx<DataModel>,
-) {
-  let chat = await ctx.db.get(message.chatId)
-  let invalid = !chat || chat.userId !== userId || message.from !== "user"
-  return !invalid
-}
-
-async function validateRecordId(
-  id: string,
-  userId: Id<"users">,
-  ctx: GenericMutationCtx<DataModel>,
-) {
-  let recordId = ctx.db.normalizeId("records", id);
-  if (!recordId) return false
-  let record = await ctx.db.get(recordId)
-  if (!record) return false
-  if (record.userId !== userId) return false
-  return recordId
-}
-
-async function getUpdatedRecords(
   userId: Id<"users">,
   cursor: number,
-  ctx: GenericMutationCtx<DataModel>,
 ) {
   let updatedRecordsRaw = await ctx.db
     .query("records")
@@ -301,6 +293,10 @@ async function getUpdatedRecords(
     }
     return record
   })
-  let updatedAt = updatedRecordsRaw[updatedRecordsRaw.length - 1]?.updatedAt ?? 0
-  return { updatedRecords, updatedAt }
+  let updatedCursor = updatedRecordsRaw[updatedRecordsRaw.length - 1]?.updatedAt ?? cursor
+  return {
+    records: updatedRecords,
+    syncCursor: updatedCursor.toString(),
+  }
+
 }

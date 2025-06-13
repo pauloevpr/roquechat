@@ -2,32 +2,41 @@
 import { createWireStore } from '../solid-wire';
 import { ChatModel, MessageModel } from '../../convex/schema';
 import { api } from '../../convex/_generated/api';
+import { Id, DataModel } from '../../convex/_generated/dataModel';
 
 // TODO: consider improving solid-wire so the sync function somehow have access to contexts
 import { convex } from './convex/client';
 
+export type Chat = ChatModel & { id: string }
+export type Message = MessageModel & { id: string }
 
 export const wireStore = createWireStore({
   name: "sync",
   definition: {
-    chats: {} as ChatModel,
-    messages: {} as MessageModel,
+    chats: {} as Chat,
+    messages: {} as Message,
   },
   sync: async ({ records, namespace, syncCursor }) => {
-    let chats = records.filter(x => x.type === "chats").map(item => ({
-      id: item.id,
-      state: item.state,
-      data: {
-        ...item.data,
-        id: item.id
-      } as ChatModel
-    }))
-    let messages = records.filter(x => x.type === "messages").map(item => ({
-      id: item.id, state: item.state, data: {
-        ...item.data,
-        id: item.id
-      } as MessageModel
-    }))
+    let chats = records.filter(x => x.type === "chats").map(item => {
+      let record = {
+        id: item.id as Id<"records">,
+        state: item.state,
+        data: item.data as Chat
+      }
+      // data.id is only used locally; we dont want to send it
+      delete (record.data as any).id
+      return record
+    })
+    let messages = records.filter(x => x.type === "messages").map(item => {
+      let record = {
+        id: item.id as Id<"records">,
+        state: item.state,
+        data: item.data as Message
+      }
+      // data.id is only used locally; we dont want to send it
+      delete (record.data as any).id
+      return record
+    })
     let result = await convex.mutation(api.functions.sync, {
       cursor: syncCursor ? Number(syncCursor) : undefined,
       chats,
@@ -35,14 +44,15 @@ export const wireStore = createWireStore({
     })
     let updatedRecords = result.records.map(record => ({
       id: record.id,
-      alternativeId: record.data.id,
       type: record.type,
       state: record.state,
-      data: record.data
+      // data.id is only used locally; we want it to be the same as the record id given by the server to avoid having client-side IDs
+      data: { ...record.data, id: record.id }
     }))
+    console.log("### sync count", updatedRecords.length)
     return {
       records: updatedRecords,
-      syncCursor,
+      syncCursor: result.syncCursor,
     }
   }
 })
