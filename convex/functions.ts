@@ -2,7 +2,7 @@ import { internalAction, internalMutation, internalQuery, mutation, query } from
 import { internal } from "./_generated/api";
 import { DataModel, Id } from "./_generated/dataModel";
 import { v } from "convex/values";
-import { ChatSchema, MessageModel, MessageSchema, RecordType } from "./schema";
+import { ChatSchema, MessageModel, MessageSchema, RecordType, RecordWithMessageData } from "./schema";
 import { OpenAI } from "openai";
 import { GenericMutationCtx, GenericQueryCtx } from "convex/server";
 import { getAuthUserId } from "@convex-dev/auth/server";
@@ -10,6 +10,16 @@ import { getAuthUserId } from "@convex-dev/auth/server";
 const openai = new OpenAI({
   // apiKey: process.env.OPENAI_API_KEY
 });
+
+export const liveSync = query({
+  args: {
+    cursor: v.optional(v.number())
+  },
+  handler: async (ctx, { cursor }) => {
+    let userId = await getRequiredUserId(ctx);
+    return getSyncUpdates(ctx, userId, cursor ?? 0)
+  }
+})
 
 export const getCurrentUser = query({
   args: {},
@@ -100,8 +110,6 @@ export const sendMessage = mutation({
         deleted: false,
         data: {
           title: "",
-          createdAt: now,
-          updatedAt: now,
         },
         userId
       })
@@ -112,11 +120,10 @@ export const sendMessage = mutation({
       streaming: false,
       streamId: undefined,
       from: "user",
-      createdAt: now,
     }
     await ctx.db.insert("records", {
       type: "messages",
-      updatedAt: now,
+      updatedAt: now + 1, // so it appears before the response
       deleted: false,
       data: newMessage,
       userId
@@ -130,14 +137,13 @@ export const sendMessage = mutation({
     let responseMessageId = await ctx.db.insert("records", {
       type: "messages",
       deleted: false,
-      updatedAt: now,
+      updatedAt: now + 3, // so the response appears after the user's message
       data: {
         chatId: newMessage.chatId,
         content: "",
         streaming: true,
         streamId,
         from: "assistant",
-        createdAt: now + 1,
       },
       userId,
     })
@@ -146,10 +152,7 @@ export const sendMessage = mutation({
       chatId,
       responseMessageId,
     })
-    let syncCursor = now - 1
-    let result = await getSyncUpdates(ctx, userId, syncCursor)
     return {
-      sync: result,
       chatId,
       message: { ...newMessage, id: responseMessageId }
     }
@@ -166,7 +169,7 @@ export const getMessagesForChat = internalQuery({
       .query("records")
       .withIndex("by_chatId", (q) => q.eq("data.chatId", chatId))
       .collect()
-    return messages.map(x => x.data as MessageModel)
+    return messages as RecordWithMessageData[]
   }
 })
 
@@ -182,8 +185,8 @@ export const startStream = internalAction({
       await ctx.runQuery(internal.functions.getMessagesForChat, {
         chatId: chatId
       }))
-      .sort((a, b) => a.createdAt - b.createdAt)
-      .map(message => ({ role: message.from, content: message.content }))
+      .sort((a, b) => a._creationTime - b._creationTime)
+      .map(message => ({ role: message.data.from, content: message.data.content }))
     let chatTitle: string | undefined = undefined
 
     try {
@@ -276,18 +279,22 @@ export const appendStreamContent = internalMutation({
           ...messageData,
           content: newContent.join(""),
           streaming: false,
-          streamId: undefined
+          streamId: undefined,
         }
       })
+      let chat = await ctx.db.get(chatId)
+      if (!chat) throw new Error(`Chat ${chatId} not found`)
       if (chatTitle) {
-        let chat = await ctx.db.get(chatId)
-        if (!chat) throw new Error(`Chat ${chatId} not found`)
         await ctx.db.patch(chatId, {
           updatedAt: Date.now(),
           data: {
             ...chat.data,
             title: chatTitle
           }
+        })
+      } else {
+        await ctx.db.patch(chatId, {
+          updatedAt: Date.now(),
         })
       }
       let deleteAfter = 2 * 60 * 60 * 1000 // 2 hours
@@ -316,22 +323,25 @@ async function getRequiredUserId(ctx: GenericMutationCtx<DataModel> | GenericQue
 
 
 async function getSyncUpdates(
-  ctx: GenericMutationCtx<DataModel>,
+  ctx: GenericMutationCtx<DataModel> | GenericQueryCtx<DataModel>,
   userId: Id<"users">,
   cursor: number,
 ) {
-  let updatedRecordsRaw = await ctx.db
+  let updatedRecordsRaw = (await ctx.db
     .query("records")
     .withIndex("by_userId_updatedAt", (q) =>
-      q.eq("userId", userId).gt("updatedAt", cursor)
+      q.eq("userId", userId).gt("updatedAt", cursor + 1)
     )
     .collect()
+  ).sort((a, b) => a.updatedAt - b.updatedAt)
   let updatedRecords = updatedRecordsRaw.map(x => {
     let record = {
       id: x._id,
       state: (x.deleted ? "deleted" : "updated") as "updated" | "deleted",
       type: x.type,
-      data: x.data
+      updatedAt: x.updatedAt,
+      createdAt: x._creationTime,
+      data: { ...x.data }
     }
     return record
   })

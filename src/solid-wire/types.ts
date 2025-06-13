@@ -33,7 +33,10 @@ export const WireStoreContext = createContext<WireStoreContextValue>()
 
 export type WireStoreContextValue = {
 	idb: Idb
-	sync(fromResponse?: SyncResponse): Promise<void>
+	sync: {
+		(fromResponse?: SyncResponse): Promise<void>
+		cursor(): string | undefined
+	}
 }
 
 export type WireStoreDefinition = Record<string, any>

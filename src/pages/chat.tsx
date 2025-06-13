@@ -1,6 +1,5 @@
-import { createEffect, createMemo, createResource, createSignal, Index, onCleanup, Show, untrack } from "solid-js"
+import { createEffect, createMemo, createResource, createSignal, For, Index, onCleanup, Show, untrack } from "solid-js"
 import { api } from "../../convex/_generated/api"
-import type { MessageModel } from "../../convex/schema" // TODO: maybe we should import from _generated
 import { Id } from "../../convex/_generated/dataModel"
 import { wireStore, createRecordId, Message } from "../lib/store"
 import { createStore } from "solid-js/store"
@@ -10,8 +9,10 @@ import hljs from 'highlight.js';
 import { markedHighlight } from 'marked-highlight';
 import DOMPurify from 'dompurify';
 import { useConvex } from "../lib/convex/provider"
-import { useSearchParams } from "@solidjs/router"
+import { createAsync, useSearchParams } from "@solidjs/router"
 
+
+// TODO: CONTINUE: since we are syncing live, there is no reason for solid-wire to call sync at startup
 
 export function ChatPage() {
   let store = wireStore.use()
@@ -20,18 +21,32 @@ export function ChatPage() {
   let streaming = createMemo(() => false)
   let { auth, convex } = useConvex()
 
-  let [messages, setMessages] = createStore([] as MessageModel[])
+  let [messages, setMessages] = createStore([] as Message[])
 
-  createEffect(async () => {
-    if (!chatId()) return
-    let items = (await store.messages.all())
-      .filter(x => x.chatId === chatId())
-      .sort((a, b) => a.createdAt - b.createdAt)
-    // we want to only append new messages to the list to minimize computation
-    let replaceFrom = messages.length
-    for (let i = replaceFrom; i < items.length; i++) {
-      setMessages(i, items[i])
+  createEffect((prevChatId: Id<"records"> | undefined) => {
+    let id = chatId()
+    let chatChanged = id !== prevChatId
+    if (!id) {
+      untrack(() => {
+        setMessages([])
+      })
+    } else {
+      store.messages.all().then(updatedMessages => {
+        updatedMessages = updatedMessages.filter(x => x.chatId === id).sort((a, b) => a.createdAt - b.createdAt)
+        untrack(() => {
+          if (chatChanged) {
+            setMessages(updatedMessages)
+          } else {
+            // we want to append only new messages to the list to minimize computation
+            let replaceFrom = messages.length
+            for (let i = replaceFrom; i < updatedMessages.length; i++) {
+              setMessages(i, updatedMessages[i])
+            }
+          }
+        })
+      })
     }
+    return chatId()
   })
 
   let inputRef: HTMLInputElement | undefined = undefined
@@ -54,6 +69,7 @@ export function ChatPage() {
       from: "user",
       id: "",
       createdAt: (lastMessage?.createdAt || 0) + 1, // to assure the message appears at the bottom
+      updatedAt: (lastMessage?.createdAt || 0) + 1, // to assure the message appears at the bottom
     }])
 
     let result = await convex.mutation(api.functions.sendMessage, {
@@ -64,8 +80,6 @@ export function ChatPage() {
     // update the message with the actual one from the server
     setMessages(newMessageIndex, result.message)
 
-    await store.sync(result.sync)
-
     if (!chatId()) {
       setSearchParams({ chatId: result.chatId }, { replace: true })
     }
@@ -73,6 +87,7 @@ export function ChatPage() {
 
   return (
     <main class="p-10">
+      <ChatList />
       <div class="space-y-4 py-6">
         <Index each={messages}>
           {(message) => (
@@ -103,6 +118,31 @@ export function ChatPage() {
   )
 }
 
+function ChatList() {
+  let store = wireStore.use()
+  let chats = createAsync(async () => {
+    let chats = await store.chats.all()
+    chats.sort((a, b) => b.updatedAt - a.updatedAt)
+    return chats
+  })
+
+  return (
+    <aside class="border p-4">
+      <ul>
+        <li>
+          <a href="/">New Chat</a>
+        </li>
+        <For each={chats()}>
+          {(chat) => (
+            <li>
+              <a href={`/?chatId=${chat.id}`}>{chat.title}</a>
+            </li>
+          )}
+        </For>
+      </ul>
+    </aside>
+  )
+}
 
 const marked = new Marked(
   markedHighlight({
@@ -122,7 +162,7 @@ marked.use({
 });
 
 
-function MessageItem(props: { message: MessageModel }) {
+function MessageItem(props: { message: Message }) {
   let { convex } = useConvex()
   let store = wireStore.use()
   let [dynamicContent, setDynamicContent] = createSignal<string[] | undefined>(undefined)
@@ -137,10 +177,6 @@ function MessageItem(props: { message: MessageModel }) {
   let unsubscribe: Function | undefined = undefined
 
   createEffect(() => {
-    console.log("message updated: ", props.message)
-  })
-
-  createEffect(() => {
     if (unsubscribe) return
     if (props.message.streaming && props.message.streamId) {
       unsubscribe = convex.onUpdate(
@@ -151,7 +187,6 @@ function MessageItem(props: { message: MessageModel }) {
           setDynamicContent(newContent)
           if (stream?.finished) {
             unsubscribe?.()
-            store.sync()
           }
         }
       )
@@ -166,7 +201,11 @@ function MessageItem(props: { message: MessageModel }) {
   }, 0)
 
   onCleanup(() => {
-    unsubscribe?.()
+    try {
+      unsubscribe?.()
+    } catch (e) {
+      // sometimes this fails and we dont know why
+    }
   })
 
   return (

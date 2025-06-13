@@ -14,9 +14,13 @@ export function WireStoreService<Definition extends WireStoreDefinition, Extenti
 	let cursorKey = `wire-store:${props.config.name}:${props.namespace}:sync-cursor`
 	let context = createMemo(() => {
 		let name = `wire-store:${props.config.name}:${props.namespace}`
+		let sync: any = triggerSync
+		sync.cursor = () => {
+			return localStorage.getItem(cursorKey);
+		}
 		let context: WireStoreContextValue = {
 			idb: useIdb(name, props.recordTypes, props.hooks),
-			sync: triggerSync,
+			sync
 		}
 		return context
 	})

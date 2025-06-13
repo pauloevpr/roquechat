@@ -7,8 +7,10 @@ import { Id, DataModel } from '../../convex/_generated/dataModel';
 // TODO: consider improving solid-wire so the sync function somehow have access to contexts
 import { convex } from './convex/client';
 
-export type Chat = ChatModel & { id: string }
-export type Message = MessageModel & { id: string }
+type LocalRecord = { id: string, updatedAt: number, createdAt: number }
+
+export type Chat = ChatModel & LocalRecord
+export type Message = MessageModel & LocalRecord
 
 export const wireStore = createWireStore({
   name: "sync",
@@ -47,8 +49,14 @@ export const wireStore = createWireStore({
       type: record.type,
       state: record.state,
       // data.id is only used locally; we want it to be the same as the record id given by the server to avoid having client-side IDs
-      data: { ...record.data, id: record.id }
+      data: {
+        ...record.data,
+        id: record.id,
+        updatedAt: record.updatedAt,
+        createdAt: record.createdAt
+      }
     }))
+    console.log("sync: result", updatedRecords)
     return {
       records: updatedRecords,
       syncCursor: result.syncCursor,
