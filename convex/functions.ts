@@ -2,11 +2,11 @@ import { internalAction, internalMutation, internalQuery, mutation, query } from
 import { internal } from "./_generated/api";
 import { DataModel, Id } from "./_generated/dataModel";
 import { v } from "convex/values";
-import { ChatSchema, MessageModel, MessageSchema, RecordType, RecordWithMessageData } from "./schema";
+import { ChatSchema, Message, MessageSchema, RecordType, RecordWithMessageData } from "./schema";
 import { OpenAI } from "openai";
 import { GenericMutationCtx, GenericQueryCtx } from "convex/server";
 import { getAuthUserId } from "@convex-dev/auth/server";
-import { createChatCompletion, streamChatCompletion } from "./llm";
+import { ai } from "./llm";
 
 const openai = new OpenAI({
   // apiKey: process.env.OPENAI_API_KEY
@@ -115,7 +115,7 @@ export const sendMessage = mutation({
         userId
       })
     }
-    let newMessage: MessageModel = {
+    let newMessage: Message = {
       chatId,
       content: message,
       streaming: false,
@@ -192,7 +192,9 @@ export const startStream = internalAction({
     let chatTitle: string | undefined = undefined
 
     try {
-      await streamChatCompletion('gpt-4.1-mini', chatHistory, async (content) => {
+
+      // await ai.openai('gpt-4.1-mini').stream(chatHistory, async (content) => {
+      await ai.google('gemini-2.0-flash').stream(chatHistory, async (content) => {
         if (content) {
           await ctx.runMutation(internal.functions.appendStreamContent, {
             streamId,
@@ -205,7 +207,8 @@ export const startStream = internalAction({
       })
       if (chatHistory.length <= 2) {
         let responseContent = await ctx.runQuery(internal.functions.getStreamContent, { streamId })
-        chatTitle = await createChatCompletion('gpt-4.1-mini',
+        // chatTitle = await ai.openai('gpt-4.1-mini').chat(
+        chatTitle = await ai.google('gemini-2.0-flash').chat(
           [
             ...chatHistory,
             { role: "assistant", content: responseContent },
@@ -265,7 +268,7 @@ export const appendStreamContent = internalMutation({
     if (final) {
       let message = await ctx.db.get(messageId)
       if (!message) throw new Error(`Message ${messageId} not found`)
-      let messageData = message.data as MessageModel
+      let messageData = message.data as Message
       await ctx.db.patch(messageId, {
         updatedAt: Date.now(),
         data: {

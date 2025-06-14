@@ -1,16 +1,16 @@
 
 import { createWireStore } from '../solid-wire';
-import { ChatModel, MessageModel } from '../../convex/schema';
+import type { Chat as ChatSchema, Message as MessageSchema } from '../../convex/schema';
 import { api } from '../../convex/_generated/api';
-import { Id, DataModel } from '../../convex/_generated/dataModel';
+import { Id } from '../../convex/_generated/dataModel';
 
 // TODO: consider improving solid-wire so the sync function somehow have access to contexts
 import { convex } from './convex/client';
 
 type LocalRecord = { id: string, updatedAt: number, createdAt: number }
 
-export type Chat = ChatModel & LocalRecord
-export type Message = MessageModel & LocalRecord
+export type Chat = ChatSchema & LocalRecord
+export type Message = MessageSchema & LocalRecord
 
 export const wireStore = createWireStore({
   name: "sync",

@@ -146,7 +146,7 @@ function ChatList() {
                   "font-semibold": chatId() === chat.id
                 }}
                 class="whitespace-nowrap"
-                href={`/?chatId=${chat.id}`}>{chat.title}</a>
+                href={`/?chatId=${chat.id}`}>{chat.title ?? "New Chat"}</a>
             </li>
           )}
         </For>

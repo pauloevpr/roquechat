@@ -80,7 +80,6 @@ export function createWireStore<Definition extends WireStoreDefinition, Extensio
     }
     let store = api as ExtendableWireStore<Definition, Extension>
     store.sync = context.sync
-    store.commit = context.commit
     return store
   }
 

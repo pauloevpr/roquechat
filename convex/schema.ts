@@ -1,7 +1,7 @@
 import { defineSchema, defineTable } from "convex/server";
 import { Infer, v } from "convex/values";
 import { authTables } from "@convex-dev/auth/server";
-import { Id } from "./_generated/dataModel";
+import { Id, DataModel } from "./_generated/dataModel";
 
 export const RecordIdSchema = v.id("records")
 
@@ -35,14 +35,13 @@ export const RecordSchema = v.object({
   userId: v.id("users"),
 })
 
-export type ChatModel = Infer<typeof ChatSchema>
-export type MessageModel = Infer<typeof MessageSchema>
-export type StreamModel = Infer<typeof StreamSchema>
 
-export type RecordModel = Infer<typeof RecordSchema> & { _id: Id<"records">; _creationTime: number; }
-export type RecordWithMessageData = RecordModel & { data: MessageModel }
-export type RecordWithChatData = RecordModel & { data: ChatModel }
-
+export type Chat = Infer<typeof ChatSchema>
+export type Message = Infer<typeof MessageSchema>
+export type Stream = Infer<typeof StreamSchema>
+export type Record = Infer<typeof RecordSchema> & { _id: Id<"records">; _creationTime: number; }
+export type RecordWithMessageData = Record & { data: Message }
+export type RecordWithChatData = Record & { data: Chat }
 export type RecordType = Infer<typeof RecordTypeSchema>
 
 export default defineSchema({

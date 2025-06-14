@@ -7,7 +7,10 @@
     "start": "vite",
     "dev": "vite",
     "build": "vite build",
-    "serve": "vite preview"
+    "serve": "vite preview",
+    "tsc": "npm run tsc:src && npm run tsc:convex",
+    "tsc:convex": "tsc --project convex/tsconfig.json --noEmit --skipLibCheck",
+    "tsc:src": "tsc --project tsconfig.json --noEmit --skipLibCheck --excludeDirectories convex"
   },
   "license": "MIT",
   "devDependencies": {
@@ -22,6 +25,7 @@
   "dependencies": {
     "@auth/core": "^0.37.0",
     "@convex-dev/auth": "^0.0.87",
+    "@google/genai": "^1.5.1",
     "@solidjs/router": "^0.15.3",
     "convex": "^1.24.8",
     "dompurify": "^3.2.6",

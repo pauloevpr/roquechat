@@ -1,5 +1,6 @@
 import { defineConfig } from 'vite';
 import solidPlugin from 'vite-plugin-solid';
+// @ts-ignore
 import tailwindcss from '@tailwindcss/vite'
 
 export default defineConfig({
