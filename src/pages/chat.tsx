@@ -7,7 +7,7 @@ import { createStore } from "solid-js/store"
 import { useConvex } from "../lib/convex/provider"
 import { createAsync, useSearchParams } from "@solidjs/router"
 import { createMarked } from "../components/marked"
-import { useModelSelector } from "./models"
+import { SelectableModel, useModelSelector } from "./models"
 
 export function ChatPage() {
   let { convex } = useConvex()
@@ -18,34 +18,27 @@ export function ChatPage() {
   let [messages, setMessages] = createStore([] as Message[])
   let refs = {
     main: undefined as undefined | HTMLDivElement,
-    input: undefined as undefined | HTMLInputElement
+    input: undefined as undefined | HTMLTextAreaElement
   }
   let [selectedModel, SelectModelButton] = useModelSelector()
 
   createEffect((previousChat: Id<"records"> | undefined) => {
+    let allMessages = store.messages.all()
     let currentChat = chatId()
     let chatChanged = currentChat !== previousChat
-    if (!currentChat) {
-      untrack(() => {
+    untrack(() => {
+      if (!currentChat) {
         setMessages([])
-      })
-    } else {
-      store.messages.all().then(updatedMessages => {
-        updatedMessages = updatedMessages.filter(x => x.chatId === currentChat).sort((a, b) => a.createdAt - b.createdAt)
-        untrack(() => {
+      } else {
+        allMessages.then(matchingMessages => {
+          matchingMessages = matchingMessages.filter(x => x.chatId === currentChat).sort((a, b) => a.createdAt - b.createdAt)
+          setMessages(matchingMessages)
           if (chatChanged) {
-            setMessages(updatedMessages)
             scrollToBottom()
-          } else {
-            // we want to append only new messages to the list to minimize computation
-            let replaceFrom = messages.length
-            for (let i = replaceFrom; i < updatedMessages.length; i++) {
-              setMessages(i, updatedMessages[i])
-            }
           }
         })
-      })
-    }
+      }
+    })
     return chatId()
   })
 
@@ -97,6 +90,12 @@ export function ChatPage() {
     }
   }
 
+  function onMessageEdited(messageId: string) {
+    let index = messages.findIndex(message => message.id === messageId)
+    if (index === -1) return
+    setMessages(list => [...list].slice(0, index + 1))
+  }
+
   return (
     <div class="grid grid-cols-[auto_1fr]">
       <ChatList />
@@ -106,12 +105,17 @@ export function ChatPage() {
         <div class="space-y-4 py-6">
           <Index each={messages}>
             {(message) => (
-              <MessageItem message={message()} />
+              <MessageItem
+                message={message()}
+                model={selectedModel()}
+                onEdited={onMessageEdited}
+              />
             )}
           </Index >
         </div >
         <form onSubmit={onSubmit}>
-          <input type="text" class="border-2 border-gray-300 rounded-md p-2"
+          <textarea
+            class="border-2 border-gray-300 rounded-md p-2"
             name="message"
             classList={{ "bg-gray-200": streaming() }}
             required
@@ -177,16 +181,28 @@ function ChatList() {
 }
 
 
-function MessageItem(props: { message: Message }) {
+function MessageItem(props: {
+  message: Message,
+  model: SelectableModel | undefined,
+  onEdited: (messageId: string) => void,
+}) {
   let marked = createMarked()
   let { convex } = useConvex()
-  let [dynamicContent, setDynamicContent] = createSignal<string[] | undefined>(undefined)
-  let content = createMemo(() => {
-    return dynamicContent() || [props.message.content]
+  let [content, setContent] = createSignal("")
+
+  createEffect(() => {
+    setContent(props.message.content)
   })
 
+  // let [dynamicContent, setDynamicContent] = createSignal<string[] | undefined>(undefined)
+  // let content = createMemo(() => {
+  //   return dynamicContent() || [props.message.content]
+  // })
+  let canEdit = createMemo(() => props.message.from === "user")
+  let [editing, setEditing] = createSignal(false)
+
   let [html] = createResource(content, (content) => {
-    return marked.parse(content.join(""))
+    return marked.parse(content)
   })
 
   let unsubscribe: Function | undefined = undefined
@@ -199,7 +215,7 @@ function MessageItem(props: { message: Message }) {
         { id: props.message.streamId },
         stream => {
           let newContent = stream?.content || []
-          setDynamicContent(newContent)
+          setContent(newContent.join(""))
           if (stream?.finished) {
             unsubscribe?.()
           }
@@ -216,9 +232,54 @@ function MessageItem(props: { message: Message }) {
     }
   })
 
+  function onEditSubmit(e: SubmitEvent) {
+    e.preventDefault()
+    if (!props.model) {
+      alert("Please select a model")
+      return
+    }
+    let form = e.target as HTMLFormElement
+    let content = form.querySelector("textarea")?.value || ""
+    if (!content) return
+    // we intentionally dont want to await here so the UI can update right away
+    convex.mutation(api.functions.editMessage, {
+      messageId: props.message.id as Id<"records">,
+      content: content,
+      model: {
+        name: props.model.model,
+        apiKey: props.model.apiKey,
+      },
+    })
+    setContent(content)
+    setEditing(false)
+    props.onEdited(props.message.id)
+  }
+
   return (
-    <article class=" border-2 border-gray-300 rounded-md p-2">
-      <div class="prose" innerHTML={html()} />
-    </article>
+    <div>
+      <Show when={!editing()}>
+        <article class=" border-2 border-gray-300 rounded-md p-2">
+          <div class="prose" innerHTML={html()} />
+        </article>
+        <Show when={canEdit()}>
+          <button class="border" onClick={() => setEditing(true)}>Edit</button>
+        </Show>
+      </Show>
+      <Show when={editing()}>
+        <form action="" onSubmit={onEditSubmit}>
+          <textarea
+            name="content"
+            required
+            class="border-2 border-gray-300 rounded-md p-2 w-full"
+            value={content()}
+          />
+          <button class="bg-green-500"
+            type="submit">Save</button>
+          <button class="border" onClick={() => setEditing(false)}
+            type="button"
+          >Cancel</button>
+        </form>
+      </Show>
+    </div>
   )
 }

@@ -7,6 +7,89 @@ import { GenericMutationCtx, GenericQueryCtx } from "convex/server";
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { ai, supportedModels } from "./llm";
 
+
+export const editMessage = mutation({
+  args: {
+    messageId: v.id("records"),
+    content: v.string(),
+    model: v.object({
+      name: v.string(),
+      apiKey: v.string(),
+    }),
+  },
+  handler: async (ctx, { messageId, content, model }) => {
+    let userId = await getRequiredUserId(ctx)
+
+    let message = await ctx.db.get(messageId)
+    if (!message) throw new Error(`Message ${messageId} not found`)
+    let validMessage = message.type === "messages" && message.userId === userId && (message.data as Message).from === "user" && !message.deleted
+    if (!validMessage) throw new Error(`Message ${messageId} not found`)
+
+    let chat = await ctx.db.get((message.data as Message).chatId)
+    if (!chat) throw new Error(`Chat ${(message.data as Message).chatId} not found`)
+    let validChat = chat.userId === userId && chat.type === "chats" && !chat.deleted
+    if (!validChat) throw new Error(`Chat ${(message.data as Message).chatId} not found`)
+
+    let now = Date.now()
+    let messageData = message.data as Message
+    messageData.content = content
+    await ctx.db.patch(messageId, {
+      updatedAt: now,
+      data: messageData,
+    })
+
+    let messagesToDelete = await ctx.db.query("records")
+      .withIndex("by_chatId", (q) => q.eq("data.chatId", chat._id))
+      .collect()
+    for (let deletingMessage of messagesToDelete) {
+      if (
+        deletingMessage._id === messageId ||
+        deletingMessage._creationTime <= message._creationTime ||
+        deletingMessage.deleted) {
+        continue
+      }
+      await ctx.db.patch(deletingMessage._id, {
+        deleted: true,
+        updatedAt: now,
+      })
+    }
+
+    let streamId = await ctx.db.insert("streams", {
+      content: [],
+      finished: false,
+      updatedAt: now,
+      userId
+    })
+    let responseMessageId = await ctx.db.insert("records", {
+      type: "messages",
+      deleted: false,
+      updatedAt: now,
+      data: {
+        chatId: chat._id,
+        content: "",
+        streaming: true,
+        streamId,
+        from: "assistant",
+      },
+      userId,
+    })
+
+    ctx.scheduler.runAfter(0, internal.functions.startStream, {
+      streamId,
+      chatId: chat._id,
+      responseMessageId,
+      skipTitle: true,
+      model: {
+        name: model.name,
+        apiKey: model.apiKey,
+      },
+    })
+    return {
+      message: { ...messageData, id: messageId }
+    }
+  }
+})
+
 export const getModels = query({
   args: {},
   handler: async (ctx) => {
@@ -163,7 +246,7 @@ export const sendMessage = mutation({
       streamId: undefined,
       from: "user",
     }
-    await ctx.db.insert("records", {
+    let messageId = await ctx.db.insert("records", {
       type: "messages",
       updatedAt: now + 1, // so it appears before the response
       deleted: false,
@@ -197,7 +280,7 @@ export const sendMessage = mutation({
     })
     return {
       chatId,
-      message: { ...newMessage, id: responseMessageId }
+      message: { ...newMessage, id: messageId }
     }
   }
 })
@@ -210,7 +293,9 @@ export const getMessagesForChat = internalQuery({
   handler: async (ctx, { chatId }) => {
     let messages = await ctx.db
       .query("records")
-      .withIndex("by_chatId", (q) => q.eq("data.chatId", chatId))
+      .withIndex("by_chatId_deleted",
+        (q) => q.eq("data.chatId", chatId).eq("deleted", false)
+      )
       .collect()
     return messages as RecordWithMessageData[]
   }
@@ -222,19 +307,20 @@ export const startStream = internalAction({
     streamId: v.id("streams"),
     chatId: v.id("records"),
     responseMessageId: v.id("records"),
+    skipTitle: v.optional(v.boolean()),
     model: v.object({
       name: v.string(),
       apiKey: v.string()
     })
   },
-  handler: async (ctx, { streamId, chatId, responseMessageId, model }) => {
-    console.log(`starting streaming with model ${model.name}`)
+  handler: async (ctx, { streamId, chatId, responseMessageId, skipTitle, model }) => {
     let chatHistory = (
       await ctx.runQuery(internal.functions.getMessagesForChat, {
         chatId: chatId
       }))
       .sort((a, b) => a._creationTime - b._creationTime)
       .map(message => ({ role: message.data.from, content: message.data.content }))
+      .filter(x => x.content.length > 0)
 
     let chatTitle: string | undefined = undefined
 
@@ -251,13 +337,13 @@ export const startStream = internalAction({
           })
         }
       })
-      if (chatHistory.length <= 2) {
+      if (chatHistory.length <= 2 && !skipTitle) {
         let responseContent = await ctx.runQuery(internal.functions.getStreamContent, { streamId })
         chatTitle = await ai.model(model.name, model.apiKey).chat(
           [
             ...chatHistory,
             { role: "assistant", content: responseContent },
-            { role: "user", content: "Based on our conversation, give me a short title (max 5 words) for this chat." }
+            { role: "user", content: "Based on our conversation, give me a short title (max 5 words) for this chat. Return nothing but the title." }
           ],
         )
       }
