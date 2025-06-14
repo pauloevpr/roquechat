@@ -8,15 +8,9 @@ import { useConvex, useQuery } from "../lib/convex/provider"
 import { createAsync, useNavigate, useSearchParams } from "@solidjs/router"
 import { createMarked } from "../components/marked"
 import { convex } from "../lib/convex/client"
-
+import { createPersistentSignal } from "../components/utils"
 
 type SelectableModel = { model: string, apiKey: string }
-
-// TODO: CONTINUE: now that we have the models, lets:
-// create a basic UI for selectin the model
-// allow user to enter the api key for the selected model
-//     let them choose where to store (server or client)
-
 
 export function ChatPage() {
   let { convex } = useConvex()
@@ -240,11 +234,15 @@ function useModelSelectDialog() {
   let [searchParams, setSearchParams] = useSearchParams()
   let showSelectDialog = createMemo(() => searchParams.select === "true")
 
+  let [selectedModelId, setSelectedModelId] = createPersistentSignal("selectedModel", searchParams.model)
   let modelsWithConfigs = createAsync(async () => {
-    let configs = await store.modelConfigs.all()
-    let privateConfigs = await store.privateModelConfigs.all()
+    let currentModels = models() ?? []
+    let [configs, privateConfigs] = await Promise.all([
+      store.modelConfigs.all(),
+      store.privateModelConfigs.all()
+    ])
     let allConfigs = [...configs, ...privateConfigs]
-    return (models() ?? []).map(model => {
+    return currentModels.map(model => {
       let config = allConfigs.find(c => c.model === model.name)
       return {
         model: model.name,
@@ -252,9 +250,9 @@ function useModelSelectDialog() {
       }
     })
   })
+
   let { show: showSettings, Dialog: SettingsDialog } = useSettingsDialog()
 
-  let [selectedModelId, setSelectedModelId] = createPersistentSignal("selectedModel", searchParams.model)
   let selectedModel = createMemo(() => {
     let model = selectedModelId() as string | undefined
     if (!model) return
@@ -402,16 +400,4 @@ function useSettingsDialog() {
     )
   }
   return { Dialog, show }
-}
-
-function createPersistentSignal<T>(key: string, initialValue: T): [Accessor<T>, (value: T) => void] {
-  let [value, setValue] = createSignal(initialValue)
-  let storedValue = localStorage.getItem(key)
-  if (storedValue) {
-    setValue(JSON.parse(storedValue))
-  }
-  createEffect(() => {
-    localStorage.setItem(key, JSON.stringify(value()))
-  })
-  return [value, setValue]
 }

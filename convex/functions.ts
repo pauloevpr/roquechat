@@ -3,7 +3,6 @@ import { internal } from "./_generated/api";
 import { DataModel, Id } from "./_generated/dataModel";
 import { v } from "convex/values";
 import { ChatSchema, Message, MessageSchema, ModelConfigSchema, RecordType, RecordWithMessageData } from "./schema";
-import { OpenAI } from "openai";
 import { GenericMutationCtx, GenericQueryCtx } from "convex/server";
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { ai, supportedModels } from "./llm";
