@@ -1,16 +1,14 @@
 import { OpenAI } from "openai";
 import { GoogleGenAI } from "@google/genai";
 
-const openai = new OpenAI({
-  // apiKey: process.env.OPENAI_API_KEY
-});
-const google = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
-
-export interface ChatEntry {
-  content: string
-  role: 'user' | 'assistant'
-  name?: string
+export const supportedModels = {
+  google: {
+    "gemini-2.0-flash": "Google Gemini 2.0 Flash",
+  },
+  openai: {
+    "gpt-4.1-mini": "OpenAI GPT-4.1 Mini",
+  }
 }
 
 export interface LLM {
@@ -19,11 +17,18 @@ export interface LLM {
 }
 
 export const ai = {
-  openai(model: string): LLM { return createOpenAI(model) },
-  google(model: string): LLM { return createGoogle(model) }
+  // openai(model: string, apiKey: string): LLM { return openai(model, apiKey) },
+  // google(model: string, apiKey: string): LLM { return goggle(model, apiKey) },
+  model(name: string, apiKey: string): LLM {
+    if (name in supportedModels.google) return goggle(name, apiKey)
+    if (name in supportedModels.openai) return openai(name, apiKey)
+    throw new Error(`Model ${name} not supported`)
+  }
 }
 
-function createOpenAI(model: string) {
+function openai(model: string, apiKey: string) {
+  if (!(model in supportedModels.openai)) throw new Error(`OpenAI model ${model} not supported`)
+  const openai = new OpenAI({ apiKey });
   return {
     async chat(messages: ChatEntry[]) {
       const response = await openai.chat.completions.create({
@@ -49,7 +54,9 @@ function createOpenAI(model: string) {
   }
 }
 
-function createGoogle(model: string) {
+function goggle(model: string, apiKey: string) {
+  if (!(model in supportedModels.google)) throw new Error(`Google model ${model} not supported`)
+  let google = new GoogleGenAI({ apiKey });
   return {
     async chat(messages: ChatEntry[]) {
       const response = await google.models.generateContent({
@@ -74,4 +81,11 @@ function createGoogle(model: string) {
       }
     }
   }
+}
+
+
+export interface ChatEntry {
+  content: string
+  role: 'user' | 'assistant'
+  name?: string
 }

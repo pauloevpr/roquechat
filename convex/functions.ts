@@ -2,15 +2,45 @@ import { internalAction, internalMutation, internalQuery, mutation, query } from
 import { internal } from "./_generated/api";
 import { DataModel, Id } from "./_generated/dataModel";
 import { v } from "convex/values";
-import { ChatSchema, Message, MessageSchema, RecordType, RecordWithMessageData } from "./schema";
+import { ChatSchema, Message, MessageSchema, ModelConfigSchema, RecordType, RecordWithMessageData } from "./schema";
 import { OpenAI } from "openai";
 import { GenericMutationCtx, GenericQueryCtx } from "convex/server";
 import { getAuthUserId } from "@convex-dev/auth/server";
-import { ai } from "./llm";
+import { ai, supportedModels } from "./llm";
 
-const openai = new OpenAI({
-  // apiKey: process.env.OPENAI_API_KEY
-});
+export const getModels = query({
+  args: {},
+  handler: async (ctx) => {
+    await getRequiredUserId(ctx);
+    let result: { vendor: string, name: string }[] = []
+    for (let vendor of Object.keys(supportedModels)) {
+      for (let name of Object.keys((supportedModels as any)[vendor])) {
+        result.push({ vendor, name })
+      }
+    }
+    return result
+  }
+})
+
+export const saveModelConfig = mutation({
+  args: {
+    model: v.string(),
+    apiKey: v.string(),
+  },
+  handler: async (ctx, { model, apiKey }) => {
+    let userId = await getRequiredUserId(ctx)
+    await ctx.db.insert("records", {
+      userId,
+      type: "modelConfigs",
+      updatedAt: Date.now(),
+      deleted: false,
+      data: {
+        model,
+        apiKey,
+      },
+    })
+  }
+})
 
 export const liveSync = query({
   args: {
@@ -49,27 +79,35 @@ export const getStream = query({
 export const sync = mutation({
   args: {
     cursor: v.optional(v.number()),
-    chats: v.array(
+    chats: v.optional(v.array(
       v.object({
         id: v.id("records"),
         state: v.union(v.literal("updated"), v.literal("deleted")),
         data: ChatSchema,
       })
-    ),
-    messages: v.array(
+    )),
+    messages: v.optional(v.array(
       v.object({
         id: v.id("records"),
         state: v.union(v.literal("updated"), v.literal("deleted")),
         data: MessageSchema,
       })
-    )
+    )),
+    modelConfigs: v.optional(v.array(
+      v.object({
+        id: v.id("records"),
+        state: v.union(v.literal("updated"), v.literal("deleted")),
+        data: ModelConfigSchema,
+      })
+    ))
   },
   handler: async (ctx, args) => {
     // TODO: should we limit the amount of records we proccess at a time?
     let userId = await getRequiredUserId(ctx)
     let allRecords = [
-      ...args.chats.map(x => ({ ...x, type: "chats" as RecordType })),
-      ...args.messages.map(x => ({ ...x, type: "messages" as RecordType })),
+      ...(args.chats ?? []).map(x => ({ ...x, type: "chats" as RecordType })),
+      ...(args.messages ?? []).map(x => ({ ...x, type: "messages" as RecordType })),
+      ...(args.modelConfigs ?? []).map(x => ({ ...x, type: "modelConfigs" as RecordType })),
     ]
     for (let record of allRecords) {
       let existingRecord = await ctx.db.get(record.id)
@@ -95,9 +133,13 @@ export const sync = mutation({
 export const sendMessage = mutation({
   args: {
     message: v.string(),
-    chatId: v.optional(v.id("records"))
+    chatId: v.optional(v.id("records")),
+    model: v.object({
+      name: v.string(),
+      apiKey: v.string(),
+    }),
   },
-  handler: async (ctx, { message, chatId }) => {
+  handler: async (ctx, { message, chatId, model }) => {
     let userId = await getRequiredUserId(ctx)
     let now = Date.now()
     if (chatId) {
@@ -152,6 +194,7 @@ export const sendMessage = mutation({
       streamId,
       chatId,
       responseMessageId,
+      model,
     })
     return {
       chatId,
@@ -180,8 +223,13 @@ export const startStream = internalAction({
     streamId: v.id("streams"),
     chatId: v.id("records"),
     responseMessageId: v.id("records"),
+    model: v.object({
+      name: v.string(),
+      apiKey: v.string()
+    })
   },
-  handler: async (ctx, { streamId, chatId, responseMessageId }) => {
+  handler: async (ctx, { streamId, chatId, responseMessageId, model }) => {
+    console.log(`starting streaming with model ${model.name}`)
     let chatHistory = (
       await ctx.runQuery(internal.functions.getMessagesForChat, {
         chatId: chatId
@@ -193,8 +241,7 @@ export const startStream = internalAction({
 
     try {
 
-      // await ai.openai('gpt-4.1-mini').stream(chatHistory, async (content) => {
-      await ai.google('gemini-2.0-flash').stream(chatHistory, async (content) => {
+      await ai.model(model.name, model.apiKey).stream(chatHistory, async (content) => {
         if (content) {
           await ctx.runMutation(internal.functions.appendStreamContent, {
             streamId,
@@ -207,8 +254,7 @@ export const startStream = internalAction({
       })
       if (chatHistory.length <= 2) {
         let responseContent = await ctx.runQuery(internal.functions.getStreamContent, { streamId })
-        // chatTitle = await ai.openai('gpt-4.1-mini').chat(
-        chatTitle = await ai.google('gemini-2.0-flash').chat(
+        chatTitle = await ai.model(model.name, model.apiKey).chat(
           [
             ...chatHistory,
             { role: "assistant", content: responseContent },

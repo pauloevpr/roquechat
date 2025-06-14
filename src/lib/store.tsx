@@ -1,6 +1,5 @@
-
 import { createWireStore } from '../solid-wire';
-import type { Chat as ChatSchema, Message as MessageSchema } from '../../convex/schema';
+import type { Chat as ChatSchema, Message as MessageSchema, ModelConfig as ModelConfigSchema } from '../../convex/schema';
 import { api } from '../../convex/_generated/api';
 import { Id } from '../../convex/_generated/dataModel';
 
@@ -8,44 +7,38 @@ import { Id } from '../../convex/_generated/dataModel';
 import { convex } from './convex/client';
 
 type LocalRecord = { id: string, updatedAt: number, createdAt: number }
-
 export type Chat = ChatSchema & LocalRecord
 export type Message = MessageSchema & LocalRecord
+export type ModelConfig = ModelConfigSchema & LocalRecord
+export type PrivateModelConfig = Pick<ModelConfigSchema, "model" | "apiKey"> & LocalRecord
 
 export const wireStore = createWireStore({
   name: "sync",
   definition: {
     chats: {} as Chat,
     messages: {} as Message,
-  },
-  options: {
-    syncOnStartup: false, // we will trigger sync manually as convex sends us new updates
+    modelConfigs: {} as ModelConfig,
+    privateModelConfigs: {} as PrivateModelConfig,
   },
   sync: async ({ records, namespace, syncCursor }) => {
-    let chats = records.filter(x => x.type === "chats").map(item => {
-      let record = {
-        id: item.id as Id<"records">,
-        state: item.state,
-        data: item.data as Chat
+    let request: any = {}
+    for (let record of records) {
+      if (record.type === "privateModelConfigs") continue  // we dont want to store private models on the server
+      if (!request[record.type]) {
+        request[record.type] = []
+      }
+      let serverRecord = {
+        id: record.id as Id<"records">,
+        state: record.state,
+        data: record.data
       }
       // data.id is only used locally; we dont want to send it
-      delete (record.data as any).id
-      return record
-    })
-    let messages = records.filter(x => x.type === "messages").map(item => {
-      let record = {
-        id: item.id as Id<"records">,
-        state: item.state,
-        data: item.data as Message
-      }
-      // data.id is only used locally; we dont want to send it
-      delete (record.data as any).id
-      return record
-    })
+      delete (serverRecord.data as any).id
+      request[record.type].push(serverRecord)
+    }
     let result = await convex.mutation(api.functions.sync, {
       cursor: syncCursor ? Number(syncCursor) : undefined,
-      chats,
-      messages,
+      ...request,
     })
     let updatedRecords = result.records.map(record => ({
       id: record.id,
@@ -67,4 +60,3 @@ export const wireStore = createWireStore({
     }
   }
 })
-

@@ -1,14 +1,22 @@
-import { createEffect, createMemo, createResource, createSignal, For, Index, onCleanup, Show, untrack } from "solid-js"
+import { Accessor, createEffect, createMemo, createResource, createSignal, For, Index, onCleanup, Show, untrack } from "solid-js"
 import { api } from "../../convex/_generated/api"
 import { Id } from "../../convex/_generated/dataModel"
-import { wireStore, Message } from "../lib/store"
+import { wireStore, Message, ModelConfig, PrivateModelConfig } from "../lib/store"
 import { createStore } from "solid-js/store"
 import "highlight.js/styles/github.css";
-import { useConvex } from "../lib/convex/provider"
-import { createAsync, useSearchParams } from "@solidjs/router"
+import { useConvex, useQuery } from "../lib/convex/provider"
+import { createAsync, useNavigate, useSearchParams } from "@solidjs/router"
 import { createMarked } from "../components/marked"
+import { convex } from "../lib/convex/client"
 
-// TODO: CONTINUE: since we are syncing live, there is no reason for solid-wire to call sync at startup
+
+type SelectableModel = { model: string, apiKey: string }
+
+// TODO: CONTINUE: now that we have the models, lets:
+// create a basic UI for selectin the model
+// allow user to enter the api key for the selected model
+//     let them choose where to store (server or client)
+
 
 export function ChatPage() {
   let { convex } = useConvex()
@@ -21,6 +29,7 @@ export function ChatPage() {
     main: undefined as undefined | HTMLDivElement,
     input: undefined as undefined | HTMLInputElement
   }
+  let [selectedModel, SelectModelButton] = useModelSelectDialog()
 
   createEffect((previousChat: Id<"records"> | undefined) => {
     let currentChat = chatId()
@@ -63,7 +72,11 @@ export function ChatPage() {
     form.reset()
     refs.input?.focus()
     if (!content) return
-
+    let model = selectedModel()
+    if (!model) {
+      alert("Please select a model")
+      return
+    }
     // add a message to the list right away for optimistic update
     let lastMessage = messages[messages.length - 1]
     let newMessageIndex = messages.length
@@ -78,14 +91,18 @@ export function ChatPage() {
 
     let result = await convex.mutation(api.functions.sendMessage, {
       message: content,
-      chatId: chatId()
+      chatId: chatId(),
+      model: {
+        name: model.model,
+        apiKey: model.apiKey,
+      }
     })
 
     // update the message with the actual one from the server
     setMessages(newMessageIndex, result.message)
 
     if (!chatId()) {
-      setSearchParams({ chatId: result.chatId }, { replace: true })
+      setSearchParams({ ...searchParams, chatId: result.chatId }, { replace: true })
     }
   }
 
@@ -115,10 +132,12 @@ export function ChatPage() {
             >Send</button>
           </Show>
         </form>
+        <SelectModelButton />
       </main >
     </div>
   )
 }
+
 
 function ChatList() {
   let { auth } = useConvex()
@@ -131,6 +150,10 @@ function ChatList() {
     chats.sort((a, b) => b.updatedAt - a.updatedAt)
     return chats
   })
+
+  function signOut() {
+    auth.signOut()
+  }
 
   return (
     <aside class="overflow-y-auto h-screen p-6 border">
@@ -154,7 +177,7 @@ function ChatList() {
 
       <button
         class="bg-gray-100 p-2 rounded-md mt-4"
-        onClick={() => auth.signOut()}
+        onClick={signOut}
       >
         Sign Out
       </button>
@@ -207,4 +230,188 @@ function MessageItem(props: { message: Message }) {
       <div class="prose" innerHTML={html()} />
     </article>
   )
+}
+
+
+function useModelSelectDialog() {
+  let navigate = useNavigate()
+  let store = wireStore.use()
+  let models = useQuery(api.functions.getModels, {})
+  let [searchParams, setSearchParams] = useSearchParams()
+  let showSelectDialog = createMemo(() => searchParams.select === "true")
+
+  let modelsWithConfigs = createAsync(async () => {
+    let configs = await store.modelConfigs.all()
+    let privateConfigs = await store.privateModelConfigs.all()
+    let allConfigs = [...configs, ...privateConfigs]
+    return (models() ?? []).map(model => {
+      let config = allConfigs.find(c => c.model === model.name)
+      return {
+        model: model.name,
+        apiKey: config?.apiKey || "",
+      }
+    })
+  })
+  let { show: showSettings, Dialog: SettingsDialog } = useSettingsDialog()
+
+  let [selectedModelId, setSelectedModelId] = createPersistentSignal("selectedModel", searchParams.model)
+  let selectedModel = createMemo(() => {
+    let model = selectedModelId() as string | undefined
+    if (!model) return
+    return modelsWithConfigs()?.find(m => m.model === model)
+  })
+
+  function select(model: SelectableModel) {
+    let config = modelsWithConfigs()?.find(m => m.model === model.model)
+    if (config?.apiKey) {
+      setSelectedModelId(model.model)
+      navigate(-1)
+    } else {
+      showSettings(model)
+    }
+  }
+
+  function startModelSelection() {
+    setSearchParams({ ...searchParams, select: "true" })
+  }
+
+  function SelectDialog() {
+    return (
+      <>
+        <dialog open class="flex justify-center items-center fixed top-0 left-0 w-full h-full bg-black/50">
+          <div class="bg-white p-4 rounded-md">
+            <h1>Select Model</h1>
+            <ul class="space-y-2">
+              <For each={modelsWithConfigs()}>
+                {(model) => (
+                  <li class="bg-gray-100 rounded px-2 py-1"
+                    classList={{
+                      "font-semibold": selectedModel()?.model === model.model
+                    }}
+                  >
+                    <button onClick={() => select(model)}>{model.model}</button>
+                  </li>
+                )}
+              </For>
+            </ul>
+            <button onClick={() => navigate(-1)}>Cancel</button>
+          </div >
+        </dialog>
+      </>
+    )
+  }
+
+  function SelectButton() {
+    let label = createMemo(() => {
+      let model = selectedModel()
+      if (!model) return "Select Model"
+      return model.model
+    })
+    return (
+      <>
+        <button onClick={startModelSelection}>
+          {label()}
+        </button>
+        <Show when={showSelectDialog()}>
+          <SelectDialog />
+          <SettingsDialog />
+        </Show>
+      </>
+    )
+  }
+
+  return [selectedModel, SelectButton] as [typeof selectedModel, typeof SelectButton]
+}
+
+
+function useSettingsDialog() {
+  let store = wireStore.use()
+  let navigate = useNavigate()
+  let [searchParams, setSearchParams] = useSearchParams()
+  let [model, setModel] = createSignal<SelectableModel | undefined>()
+  let showSettingsDialog = createMemo(() => searchParams.settings === "true")
+
+  function show(model: SelectableModel) {
+    setModel(model)
+    setSearchParams({ ...searchParams, settings: "true" })
+  }
+
+  function Dialog() {
+
+    async function onSubmit(e: SubmitEvent) {
+      // TODO: CONTINUE: this is not working
+      e.preventDefault()
+      let form = e.target as HTMLFormElement
+      let formData = new FormData(form)
+      let apiKey = formData.get("apiKey") as string
+      let storage = formData.get("storage") as string
+      let model = formData.get("model") as string
+      if (storage === "local") {
+        await store.privateModelConfigs.set(model, {
+          model,
+          apiKey,
+          id: model,
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        })
+      } else if (storage === "server") {
+        // TODO: add loading indicator?
+        await convex.mutation(api.functions.saveModelConfig, {
+          model,
+          apiKey
+        })
+      }
+      setModel(undefined)
+      navigate(-1)
+    }
+
+    return (
+      <Show when={showSettingsDialog()}>
+        <dialog open class="flex justify-center items-center fixed top-0 left-0 w-full h-full bg-black/50">
+          <div class="bg-white p-4 rounded-md">
+            <form onSubmit={onSubmit}>
+              <h1>{model()?.model} Settings</h1>
+              <input type="hidden" name="model" value={model()?.model} />
+              <input
+                name="apiKey"
+                placeholder="Enter API Key"
+                required
+                maxLength={512}
+              />
+              <div class="mt-4 space-y-2">
+                <div>
+                  <label class="flex items-center gap-2">
+                    <input type="radio" name="storage" value="local" checked />
+                    <span>Save Local</span>
+                  </label>
+                </div>
+                <div>
+                  <label class="flex items-center gap-2">
+                    <input type="radio" name="storage" value="server" />
+                    <span>Save on Server</span>
+                  </label>
+                </div>
+              </div>
+              <button class="bg-blue-500 text-white px-4 py-2 rounded-md"
+                type="submit">Save</button>
+              <button onClick={() => navigate(-1)} type="button">Cancel</button>
+            </form>
+          </div>
+        </dialog>
+      </Show>
+    )
+  }
+  return { Dialog, show }
+}
+
+function createPersistentSignal<T>(key: string, initialValue: T): [Accessor<T>, (value: T) => void] {
+  let [value, setValue] = createSignal(initialValue)
+  let storedValue = localStorage.getItem(key)
+  if (storedValue) {
+    setValue(JSON.parse(storedValue))
+  }
+  createEffect(() => {
+    localStorage.setItem(key, JSON.stringify(value()))
+  })
+  return [value, setValue]
 }
