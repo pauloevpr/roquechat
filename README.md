@@ -38,4 +38,3 @@ Extra
 - [ ] Select codeblock color theme
 
 Critical Bugs
-- [ ] Authentication with saved tokens fail if the refresh token gets old (a few hours)

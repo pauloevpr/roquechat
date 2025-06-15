@@ -1,8 +1,9 @@
-import { ConvexClient } from "convex/browser";
+import { ConvexClient, ConvexHttpClient } from "convex/browser";
 import { FunctionReference } from "convex/server";
 import { Accessor, createContext, createEffect, createSignal, onCleanup, onMount, ParentProps, Setter, useContext } from "solid-js";
 import { AuthTokenFetcher, ConvexAuthState, ConvexContextValue, SignInParams, SignInResult } from "./types";
 import { createStore } from "solid-js/store";
+
 
 // TODO: Improve error handling to show feedback to the user when something goes wrong
 //
@@ -25,7 +26,7 @@ export const ConvexProvider = (props: ParentProps<{ client: ConvexClient }>) => 
   })
 
   createEffect(() => {
-    console.log("auth state", store.auth.state)
+    console.log("auth: state changes: ", store.auth.state)
   })
 
   async function signIn(provider: string, params?: SignInParams) {
@@ -35,6 +36,9 @@ export const ConvexProvider = (props: ParentProps<{ client: ConvexClient }>) => 
       localStorage.setItem(StorageKeys.verifier, result.verifier!)
       const url = new URL(result.redirect);
       window.location.href = url.toString()
+    } else if (result.tokens) {
+      tokenStorage.save(result.tokens)
+      console.warn("auth: The sign in returned tokens right away. We dont kno what to do here.", result)
     }
   }
 
@@ -55,7 +59,7 @@ export const ConvexProvider = (props: ParentProps<{ client: ConvexClient }>) => 
     }
   }
 
-  useAutoSignIn(() => props.client, authState => {
+  useSignInService(() => props.client, authState => {
     setStore("auth", "state", authState)
   })
 
@@ -91,11 +95,21 @@ export function useQuery<Query extends FunctionReference<"query">>(
   return data
 }
 
-function useAutoSignIn(
+function useSignInService(
   convex: Accessor<ConvexClient>,
   setAuthState: Setter<ConvexAuthState>,
 ) {
-  let tokenFetcher = useAuthTokenFetcher(convex)
+  const tokenFetcher: AuthTokenFetcher = async ({ forceRefreshToken }) => {
+    console.log("auth: fetcher called: force refresh? ", forceRefreshToken)
+    if (forceRefreshToken) {
+
+      await signInWithRefreshToken()
+
+    }
+    let accessToken = tokenStorage.read().accessToken
+    console.log("auth: fetcher returning access token?", !!accessToken)
+    return accessToken
+  }
 
   async function signInWithCode(signInCode: string) {
     const url = new URL(window.location.href)
@@ -140,6 +154,25 @@ function useAutoSignIn(
     })
   }
 
+  async function signInWithRefreshToken() {
+    console.log("auth: sign in with refresh token")
+    let refreshToken = tokenStorage.read().refreshToken
+    if (!refreshToken) {
+      console.log("auth: no refresh token found")
+      return
+    }
+    try {
+      let address = (convex().client as any).address
+      let logger = (convex().client as any).logger
+      let result: SignInResult = await new ConvexHttpClient(address, { logger })
+        .action("auth:signIn" as any, { refreshToken })
+      console.log("auth: sign in with refresh token success")
+      tokenStorage.save(result.tokens)
+    } catch (e) {
+      console.error("auth: error refreshing token", e)
+    }
+  }
+
   onMount(async () => {
     const signInCode =
       typeof window?.location?.search !== "undefined"
@@ -155,34 +188,6 @@ function useAutoSignIn(
       setAuthState("unauthenticated")
     }
   })
-}
-
-const useAuthTokenFetcher = (
-  convex: Accessor<ConvexClient>,
-) => {
-  const fetcher: AuthTokenFetcher = async ({ forceRefreshToken }) => {
-    console.log("auth: fetcher called: force refresh? ", forceRefreshToken)
-    if (forceRefreshToken) {
-      let refreshToken = tokenStorage.read().refreshToken
-      if (refreshToken) {
-        try {
-          let signInParams = { refreshToken }
-          console.log("auth: sign in with refresh token")
-          let result: SignInResult = await convex().action("auth:signIn" as any, signInParams)
-          console.log("auth: sign in with refresh token result", result)
-          tokenStorage.save(result.tokens)
-        } catch (e) {
-          console.error("auth: error refreshing token", e)
-        }
-      } else {
-        console.log("auth: no refresh token found")
-      }
-    }
-    let accessToken = tokenStorage.read().accessToken
-    console.log("auth: fetcher returning access token?", !!accessToken)
-    return accessToken
-  }
-  return fetcher
 }
 
 const tokenStorage = {
