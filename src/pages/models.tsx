@@ -1,6 +1,6 @@
 import { createMemo, createSignal, For, Show } from "solid-js"
 import { api } from "../../convex/_generated/api"
-import { wireStore } from "../lib/store"
+import { SyncStore } from "../lib/sync"
 import { useQuery } from "../lib/convex/provider"
 import { createAsync, useNavigate, useSearchParams } from "@solidjs/router"
 import { convex } from "../lib/convex/client"
@@ -11,7 +11,7 @@ export type SelectableModel = { model: string, apiKey: string }
 
 export function useModelSelector() {
   let navigate = useNavigate()
-  let store = wireStore.use()
+  let store = SyncStore.use()
   let models = useQuery(api.functions.getModels, {})
   let [searchParams, setSearchParams] = useSearchParams()
   let showSelectDialog = createMemo(() => searchParams.select === "true")
@@ -105,7 +105,7 @@ export function useModelSelector() {
 
 
 function useSettingsDialog() {
-  let store = wireStore.use()
+  let store = SyncStore.use()
   let navigate = useNavigate()
   let [searchParams, setSearchParams] = useSearchParams()
   let [model, setModel] = createSignal<SelectableModel | undefined>()

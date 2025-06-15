@@ -1,9 +1,8 @@
 import { Navigate, RouteSectionProps } from "@solidjs/router"
-import { wireStore } from "../lib/store"
 import { createEffect, ParentProps, Show } from "solid-js"
 import { useConvex, useQuery } from "../lib/convex/provider"
 import { api } from "../../convex/_generated/api"
-import { LiveSync } from "../lib/sync"
+import { LiveSync, SyncStore } from "../lib/sync"
 
 
 export function ProtectedWrapper(props: RouteSectionProps) {
@@ -16,11 +15,11 @@ export function ProtectedWrapper(props: RouteSectionProps) {
     return (
       <Show when={user()} keyed>
         {user => (
-          <wireStore.Provider namespace={user.id}>
+          <SyncStore.Provider namespace={user.id}>
             <LiveSync>
               {props.children}
             </LiveSync>
-          </wireStore.Provider>
+          </SyncStore.Provider>
         )}
       </Show>
     )

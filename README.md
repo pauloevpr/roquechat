@@ -19,7 +19,6 @@ GUI
 - [ ] Basic styling
 - [ ] Cancel current stream
 - [ ] Delete chat
-- [ ] Rename chat title
 - [ ] Search chats by title or content
 - [ ] Group chats by date
 - [ ] Copy message content

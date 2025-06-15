@@ -1,8 +1,8 @@
 import "highlight.js/styles/github.css";
-import { createEffect, createMemo, createResource, createSignal, For, Index, onCleanup, Show, untrack } from "solid-js"
+import { createEffect, createMemo, createResource, createSignal, For, Index, onCleanup, Show, untrack, VoidProps } from "solid-js"
 import { api } from "../../convex/_generated/api"
 import { Id } from "../../convex/_generated/dataModel"
-import { wireStore, Message } from "../lib/store"
+import { SyncStore, Message, Chat } from "../lib/sync"
 import { createStore } from "solid-js/store"
 import { useConvex } from "../lib/convex/provider"
 import { createAsync, useSearchParams } from "@solidjs/router"
@@ -11,7 +11,7 @@ import { SelectableModel, useModelSelector } from "./models"
 
 export function ChatPage() {
   let { convex } = useConvex()
-  let store = wireStore.use()
+  let store = SyncStore.use()
   let [searchParams, setSearchParams] = useSearchParams()
   let chatId = createMemo(() => searchParams.chatId as Id<"records"> | undefined)
   let streaming = createMemo(() => false)
@@ -137,7 +137,7 @@ export function ChatPage() {
 function ChatList() {
   let { auth } = useConvex()
   let [searchParams] = useSearchParams()
-  let store = wireStore.use()
+  let store = SyncStore.use()
   let chatId = createMemo(() => searchParams.chatId as Id<"records"> | undefined)
 
   let chats = createAsync(async () => {
@@ -158,14 +158,10 @@ function ChatList() {
         </li>
         <For each={chats()}>
           {(chat) => (
-            <li>
-              <a
-                classList={{
-                  "font-semibold": chatId() === chat.id
-                }}
-                class="whitespace-nowrap"
-                href={`/?chatId=${chat.id}`}>{chat.title ?? "New Chat"}</a>
-            </li>
+            <ChatListItem
+              chat={chat}
+              selected={chatId() === chat.id}
+            />
           )}
         </For>
       </ul>
@@ -180,6 +176,55 @@ function ChatList() {
   )
 }
 
+function ChatListItem(props: VoidProps<{
+  chat: Chat,
+  selected: boolean,
+}>) {
+  let store = SyncStore.use()
+  let [editing, setEditing] = createSignal(false)
+
+  async function onEditSubmit(e: SubmitEvent) {
+    e.preventDefault()
+    let form = e.target as HTMLFormElement
+    let title = form.querySelector("input")?.value || ""
+    if (title) {
+      await store.chats.set(props.chat.id, {
+        ...props.chat,
+        title: title,
+      })
+    }
+    setEditing(false)
+  }
+
+  function startEditing(e: MouseEvent) {
+    e.preventDefault()
+    e.stopPropagation()
+    setEditing(true)
+  }
+
+  return (
+    <li>
+      <Show when={editing()}>
+        <form onSubmit={onEditSubmit}>
+          <input autofocus type="text" value={props.chat.title} name="title" required />
+        </form>
+      </Show>
+      <Show when={!editing()}>
+        <a
+          classList={{
+            "font-semibold": props.selected
+          }}
+          class="group whitespace-nowrap text-ellipsis"
+          href={`/?chatId=${props.chat.id}`}>
+          {props.chat.title ?? "New Chat"}
+          <button
+            class="invisible group-hover:visible border"
+            onClick={startEditing}>Edit</button>
+        </a>
+      </Show>
+    </li>
+  )
+}
 
 function MessageItem(props: {
   message: Message,
