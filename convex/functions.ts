@@ -2,7 +2,7 @@ import { internalAction, internalMutation, internalQuery, mutation, query } from
 import { internal } from "./_generated/api";
 import { DataModel, Id } from "./_generated/dataModel";
 import { v } from "convex/values";
-import { ChatSchema, Message, MessageSchema, ModelConfigSchema, RecordType, RecordWithMessageData } from "./schema";
+import { Chat, ChatSchema, Message, RecordBase, MessageSchema, ModelConfigSchema, RecordType, RecordWithChatData, RecordWithMessageData } from "./schema";
 import { GenericMutationCtx, GenericQueryCtx } from "convex/server";
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { ai, supportedModels } from "./llm";
@@ -19,27 +19,21 @@ export const editMessage = mutation({
   },
   handler: async (ctx, { messageId, content, model }) => {
     let userId = await getRequiredUserId(ctx)
-
-    let message = await ctx.db.get(messageId)
-    if (!message) throw new Error(`Message ${messageId} not found`)
-    let validMessage = message.type === "messages" && message.userId === userId && (message.data as Message).from === "user" && !message.deleted
-    if (!validMessage) throw new Error(`Message ${messageId} not found`)
-
-    let chat = await ctx.db.get((message.data as Message).chatId)
-    if (!chat) throw new Error(`Chat ${(message.data as Message).chatId} not found`)
-    let validChat = chat.userId === userId && chat.type === "chats" && !chat.deleted
-    if (!validChat) throw new Error(`Chat ${(message.data as Message).chatId} not found`)
-
-    let now = Date.now()
+    let messageRecord = await ctx.db.get(messageId)
+    let message = validate.messageFromUser(messageRecord, userId)
+    let chatRecord = await ctx.db.get((message.data as Message).chatId)
+    let chat = validate.chat(chatRecord, userId)
     let messageData = message.data as Message
+    let now = Date.now()
     messageData.content = content
     await ctx.db.patch(messageId, {
       updatedAt: now,
       data: messageData,
     })
-
     let messagesToDelete = await ctx.db.query("records")
-      .withIndex("by_chatId", (q) => q.eq("data.chatId", chat._id))
+      .withIndex("by_chatId_deleted",
+        (q) => q.eq("data.chatId", chat._id).eq("deleted", false)
+      )
       .collect()
     for (let deletingMessage of messagesToDelete) {
       if (
@@ -225,9 +219,8 @@ export const sendMessage = mutation({
     let userId = await getRequiredUserId(ctx)
     let now = Date.now()
     if (chatId) {
-      let chat = await ctx.db.get(chatId)
-      let invalidChat = !chat || chat.type !== "chats" || chat.userId !== userId
-      if (invalidChat) throw new Error(`Chat ${chatId} not found`)
+      let chatRecord = await ctx.db.get(chatId)
+      validate.chat(chatRecord, userId)
     } else {
       chatId = await ctx.db.insert("records", {
         type: "chats",
@@ -477,3 +470,22 @@ async function getSyncUpdates(
   }
 }
 
+const validate = {
+  chat: (chat: RecordBase | null, userId: Id<"users">) => {
+    let invalid = !chat ||
+      chat.type !== "chats" ||
+      chat.userId !== userId ||
+      chat.deleted
+    if (invalid) throw new Error(`Chat ${chat?._id} is invalid`)
+    return chat as RecordWithChatData
+  },
+  messageFromUser: (message: RecordBase | null, userId: Id<"users">) => {
+    let invalid = !message ||
+      message.type !== "messages" ||
+      message.userId !== userId ||
+      message.deleted ||
+      (message.data as Message).from !== "user"
+    if (invalid) throw new Error(`Message ${message?._id} is invalid`)
+    return message as RecordWithMessageData
+  },
+}

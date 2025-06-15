@@ -47,9 +47,7 @@ export const RecordSchema = v.object({
 export default defineSchema({
   ...authTables,
   records: defineTable(RecordSchema)
-    .index("by_userId", ["userId"])
     .index("by_userId_updatedAt", ["userId", "updatedAt"])
-    .index("by_chatId", ["data.chatId"])
     .index("by_chatId_deleted", ["data.chatId", "deleted"]),
   streams: defineTable(StreamSchema)
     .index("by_userId", ["userId"]),
@@ -58,8 +56,8 @@ export default defineSchema({
 export type Chat = Infer<typeof ChatSchema>
 export type Message = Infer<typeof MessageSchema>
 export type Stream = Infer<typeof StreamSchema>
-export type Record = Infer<typeof RecordSchema> & { _id: Id<"records">; _creationTime: number; }
-export type RecordWithMessageData = Record & { data: Message }
-export type RecordWithChatData = Record & { data: Chat }
+export type RecordBase = Infer<typeof RecordSchema> & { _id: Id<"records">; _creationTime: number; }
+export type RecordWithMessageData = RecordBase & { data: Message }
+export type RecordWithChatData = RecordBase & { data: Chat }
 export type RecordType = Infer<typeof RecordTypeSchema>
 export type ModelConfig = Infer<typeof ModelConfigSchema>
