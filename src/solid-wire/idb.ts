@@ -95,10 +95,10 @@ export function useIdb<Definition extends WireStoreDefinition>(
 		let recordTypes = new Set(records.filter(item => !!item).map(item => item!.type))
 		await Promise.all(ids.map((id) => new Promise((resolve, reject) => {
 			const request = db.transaction("records", "readwrite").objectStore("records").delete(id)
-			request.onsuccess = function() {
+			request.onsuccess = function () {
 				resolve(undefined);
 			};
-			request.onerror = function(event: any) {
+			request.onerror = function (event: any) {
 				reject("Error deleting record: " + event.target.error);
 			};
 		})))
@@ -200,14 +200,11 @@ export function useIdb<Definition extends WireStoreDefinition>(
 		async function softDelete(...ids: string[]): Promise<void> {
 			if (!ids.length) return
 			await Promise.all(
-				ids.map(id => new Promise((resolve, reject) => {
-					let record: any = {
-						id,
-						type,
-						deleted: true,
-						unsynced: "true",
-						data: {}
-					}
+				ids.map(id => new Promise(async (resolve, reject) => {
+					let record = await getRawUnhookedRecord(id)
+					if (!record) return
+					record.deleted = true
+					record.unsynced = "true"
 					put(record).then(resolve).catch(reject)
 				}))
 			)

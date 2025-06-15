@@ -29,8 +29,6 @@ export const cancelResponse = mutation({
         streamId: undefined,
       }
     })
-    let deleteAfter = 15 * 60 * 1000 // 15 min
-    await ctx.scheduler.runAfter(deleteAfter, internal.functions.deleteStream, { streamId: stream._id })
   }
 })
 
@@ -309,7 +307,6 @@ export const sendMessage = mutation({
   }
 })
 
-
 export const getMessagesForChat = internalQuery({
   args: {
     chatId: v.id("records")
@@ -324,7 +321,6 @@ export const getMessagesForChat = internalQuery({
     return messages as RecordWithMessageData[]
   }
 })
-
 
 export const startStream = internalAction({
   args: {
@@ -345,11 +341,8 @@ export const startStream = internalAction({
       .sort((a, b) => a._creationTime - b._creationTime)
       .map(message => ({ role: message.data.from, content: message.data.content }))
       .filter(x => x.content.length > 0)
-
     try {
-
       let abort = new AbortController()
-
       await ai.model(model.name, model.apiKey, abort.signal).stream(chatHistory, async (content) => {
         if (content) {
           let result = await ctx.runMutation(internal.functions.appendStreamContent, {
@@ -357,9 +350,8 @@ export const startStream = internalAction({
             messageId: responseMessageId,
             content: content,
             final: false,
-            chatId,
           })
-          if (result === "finished") {
+          if (result === "cancelled") {
             abort.abort()
           }
         }
@@ -369,7 +361,6 @@ export const startStream = internalAction({
         messageId: responseMessageId,
         content: "",
         final: true,
-        chatId,
       })
       if (!chatTitle) {
         let responseContent = await ctx.runQuery(internal.functions.getStreamContent, { streamId })
@@ -394,8 +385,10 @@ export const startStream = internalAction({
         messageId: responseMessageId,
         content: `Failed: ${error}`,
         final: true,
-        chatId,
       })
+    } finally {
+      let deleteAfter = 2 * 60 * 60 * 1000 // 2 hours
+      await ctx.scheduler.runAfter(deleteAfter, internal.functions.deleteStream, { streamId })
     }
   }
 })
@@ -417,12 +410,19 @@ export const appendStreamContent = internalMutation({
     messageId: v.id("records"),
     content: v.string(),
     final: v.boolean(),
-    chatId: v.id("records"),
   },
-  handler: async (ctx, { streamId, messageId, content, final, chatId }) => {
+  handler: async (ctx, { streamId, messageId, content, final }): Promise<"cancelled" | undefined> => {
     let stream = await ctx.db.get(streamId)
     if (!stream) throw new Error(`Stream ${streamId} not found`)
-    if (stream.finished) return "finished"
+    if (stream.finished) return "cancelled"
+    let message = await ctx.db.get(messageId)
+    if (!message || message.deleted) {
+      await ctx.db.patch(streamId, {
+        finished: final,
+        updatedAt: Date.now()
+      })
+      return "cancelled"
+    }
     let newContent = [...stream.content, content]
     await ctx.db.patch(streamId, {
       content: newContent,
@@ -430,8 +430,6 @@ export const appendStreamContent = internalMutation({
       updatedAt: Date.now()
     })
     if (final) {
-      let message = await ctx.db.get(messageId)
-      if (!message) throw new Error(`Message ${messageId} not found`)
       let messageData = message.data as Message
       await ctx.db.patch(messageId, {
         updatedAt: Date.now(),
@@ -440,10 +438,6 @@ export const appendStreamContent = internalMutation({
           content: newContent.join(""),
           streamId: undefined,
         }
-      })
-      let deleteAfter = 2 * 60 * 60 * 1000 // 2 hours
-      await ctx.scheduler.runAfter(deleteAfter, internal.functions.deleteStream, {
-        streamId
       })
     }
   }

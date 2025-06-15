@@ -34,8 +34,10 @@ export function WireStoreService<Definition extends WireStoreDefinition, Extenti
 		}
 		let idb = context().idb
 		unsubscribe?.()
+		let debouncedTriggerSync = debounce(triggerSync, 50)
 		unsubscribe = idb.internal.listenToUnsyncedChanges(() => {
-			triggerSync()
+			// we want to debounce a litle to allow multiple consecutive changes to be grouped into a single sync
+			debouncedTriggerSync()
 		})
 		startPeriodicSync()
 		return idb
@@ -142,4 +144,14 @@ export function WireStoreService<Definition extends WireStoreDefinition, Extenti
 
 const defaultOptions = {
 	syncOnStartup: true,
+}
+
+function debounce<T extends Function>(fn: T, delay: number): T {
+	let timeoutId: ReturnType<typeof setTimeout>
+	return function (this: any, ...args: any[]) {
+		clearTimeout(timeoutId)
+		timeoutId = setTimeout(() => {
+			fn.apply(this, args)
+		}, delay)
+	} as any
 }

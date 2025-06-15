@@ -13,8 +13,7 @@ import { SelectableModel, useModelSelector } from "./models"
 export function ChatPage() {
   let { convex } = useConvex()
   let store = SyncStore.use()
-  let [searchParams, setSearchParams] = useSearchParams()
-  let chatId = createMemo(() => searchParams.chatId as Id<"records"> | undefined)
+  let [chatId, setChatId] = useCurrentChatId()
   let [streamingMessageId, setStreamingMessageId] = createSignal<Id<"records"> | undefined>(undefined)
   let streaming = createMemo(() => !!streamingMessageId())
   let [messages, setMessages] = createStore([] as Message[])
@@ -35,10 +34,11 @@ export function ChatPage() {
         allMessages.then(matchingMessages => {
           matchingMessages = matchingMessages.filter(x => x.chatId === currentChat).sort((a, b) => a.createdAt - b.createdAt)
           setMessages(matchingMessages)
-          if (chatChanged) {
-            scrollToBottom()
-          }
         })
+      }
+      if (chatChanged) {
+        setStreamingMessageId(undefined)
+        scrollToBottom()
       }
     })
     return chatId()
@@ -88,7 +88,7 @@ export function ChatPage() {
     setMessages(newMessageIndex, result.message)
 
     if (!chatId()) {
-      setSearchParams({ ...searchParams, chatId: result.chatId }, { replace: true })
+      setChatId(result.chatId)
     }
   }
 
@@ -106,7 +106,7 @@ export function ChatPage() {
     }
   }
 
-  function onCancel() {
+  function cancelResponse() {
     let messageId = streamingMessageId()
     if (!messageId) return
     convex.mutation(api.functions.cancelResponse, { messageId: messageId })
@@ -152,7 +152,7 @@ export function ChatPage() {
                 >Send</button>
               </Show>
               <Show when={streaming()}>
-                <button class="bg-red-500" type="button" onClick={onCancel}>Cancel</button>
+                <button class="bg-red-500" type="button" onClick={cancelResponse}>Cancel</button>
               </Show>
             </div>
           </form>
@@ -166,9 +166,8 @@ export function ChatPage() {
 
 function ChatList() {
   let { auth } = useConvex()
-  let [searchParams] = useSearchParams()
   let store = SyncStore.use()
-  let chatId = createMemo(() => searchParams.chatId as Id<"records"> | undefined)
+  let [chatId] = useCurrentChatId()
 
   let chats = createAsync(async () => {
     let chats = await store.chats.all()
@@ -212,6 +211,7 @@ function ChatListItem(props: VoidProps<{
 }>) {
   let store = SyncStore.use()
   let [editing, setEditing] = createSignal(false)
+  let [chatId, setChatId] = useCurrentChatId()
 
   async function onEditSubmit(e: SubmitEvent) {
     e.preventDefault()
@@ -232,6 +232,17 @@ function ChatListItem(props: VoidProps<{
     setEditing(true)
   }
 
+  async function deleteChat() {
+    let confirmed = confirm("Are you sure you want to delete this chat and its messages?")
+    if (!confirmed) return
+    let messages = (await store.messages.all()).filter(x => x.chatId === props.chat.id)
+    await store.chats.delete(props.chat.id)
+    await store.chats.delete(...messages.map(x => x.id))
+    if (chatId() === props.chat.id) {
+      setChatId(undefined)
+    }
+  }
+
   return (
     <li>
       <Show when={editing()}>
@@ -250,6 +261,9 @@ function ChatListItem(props: VoidProps<{
           <button
             class="invisible group-hover:visible border"
             onClick={startEditing}>Edit</button>
+          <button
+            class="invisible group-hover:visible border"
+            onClick={deleteChat}>Delete</button>
         </a>
       </Show>
     </li>
@@ -360,4 +374,14 @@ function MessageItem(props: {
       </Show>
     </div>
   )
+}
+
+
+function useCurrentChatId() {
+  let [searchParams, setSearchParams] = useSearchParams()
+  let chatId = createMemo(() => searchParams.chatId as Id<"records"> | undefined)
+  function setChatId(id?: string) {
+    setSearchParams({ ...searchParams, chatId: id }, { replace: true })
+  }
+  return [chatId, setChatId] as [typeof chatId, typeof setChatId]
 }

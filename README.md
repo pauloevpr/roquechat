@@ -18,7 +18,6 @@ Core
 
 GUI
 - [ ] Basic styling
-- [ ] Delete chat
 - [ ] Search chats by title or content
 - [ ] Group chats by date
 - [ ] Copy message content
@@ -35,5 +34,3 @@ Extra
 - [ ] Dictate message
 - [ ] Multiple themes 
 - [ ] Select codeblock color theme
-
-Critical Bugs
