@@ -347,6 +347,10 @@ function MessageItem(props: {
     props.onEdited(props.message.id)
   }
 
+  function copyToClipboard() {
+    navigator.clipboard.writeText(props.message.content)
+  }
+
   return (
     <div>
       <Show when={!editing()}>
@@ -356,6 +360,7 @@ function MessageItem(props: {
         <Show when={canEdit()}>
           <button class="border" onClick={() => setEditing(true)}>Edit</button>
         </Show>
+        <button class="border" onClick={copyToClipboard}>Copy</button>
       </Show>
       <Show when={editing()}>
         <form action="" onSubmit={onEditSubmit}>

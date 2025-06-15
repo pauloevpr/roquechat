@@ -18,9 +18,9 @@ Core
 
 GUI
 - [ ] Basic styling
+- [ ] Auto scroll
 - [ ] Search chats by title or content
 - [ ] Group chats by date
-- [ ] Copy message content
 - [ ] Copy code block
 - [ ] Pin thread
 - [ ] Dark mode support
