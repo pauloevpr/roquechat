@@ -12,21 +12,21 @@ export const supportedModels = {
 }
 
 export interface LLM {
-  chat(messages: ChatEntry[]): Promise<string | undefined>;
+  chat(messages: ChatEntry[], options?: { signal?: AbortSignal }): Promise<string | undefined>;
   stream(messages: ChatEntry[], callback: (content: string | undefined) => Promise<void> | void): Promise<void>;
 }
 
 export const ai = {
   // openai(model: string, apiKey: string): LLM { return openai(model, apiKey) },
   // google(model: string, apiKey: string): LLM { return goggle(model, apiKey) },
-  model(name: string, apiKey: string): LLM {
-    if (name in supportedModels.google) return goggle(name, apiKey)
-    if (name in supportedModels.openai) return openai(name, apiKey)
+  model(name: string, apiKey: string, abort: AbortSignal): LLM {
+    if (name in supportedModels.google) return google(name, apiKey, abort)
+    if (name in supportedModels.openai) return openai(name, apiKey, abort)
     throw new Error(`Model ${name} not supported`)
   }
 }
 
-function openai(model: string, apiKey: string) {
+function openai(model: string, apiKey: string, abort: AbortSignal) {
   if (!(model in supportedModels.openai)) throw new Error(`OpenAI model ${model} not supported`)
   const openai = new OpenAI({ apiKey });
   return {
@@ -34,16 +34,15 @@ function openai(model: string, apiKey: string) {
       const response = await openai.chat.completions.create({
         model,
         messages,
-      });
+      }, { signal: abort });
       return response.choices[0].message.content ?? undefined
     },
-
     async stream(messages: ChatEntry[], callback: (content: string | undefined) => Promise<void> | void) {
       const response = await openai.chat.completions.create({
         model,
         messages,
-        stream: true
-      });
+        stream: true,
+      }, { signal: abort });
       for await (const chunk of response) {
         const content = chunk.choices?.[0]?.delta?.content;
         if (content) {
@@ -54,7 +53,7 @@ function openai(model: string, apiKey: string) {
   }
 }
 
-function goggle(model: string, apiKey: string) {
+function google(model: string, apiKey: string, abort: AbortSignal) {
   if (!(model in supportedModels.google)) throw new Error(`Google model ${model} not supported`)
   let google = new GoogleGenAI({ apiKey });
   return {
@@ -65,6 +64,7 @@ function goggle(model: string, apiKey: string) {
           role: msg.role === 'user' ? 'user' : 'model',
           parts: [{ text: msg.content }]
         })),
+        config: { abortSignal: abort }
       });
       return response.text
     },
@@ -75,6 +75,7 @@ function goggle(model: string, apiKey: string) {
           role: msg.role === 'user' ? 'user' : 'model',
           parts: [{ text: msg.content }]
         })),
+        config: { abortSignal: abort }
       });
       for await (const chunk of response) {
         await callback(chunk.text)

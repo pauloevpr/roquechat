@@ -14,11 +14,11 @@ export const RecordTypeSchema = v.union(
 
 export const ChatSchema = v.object({
   title: v.string(),
+  lastMessageAt: v.number(),
 })
 
 export const MessageSchema = v.object({
   content: v.string(), // TODO: this should be an array of strings so we dont have to join them chunks in the server
-  streaming: v.optional(v.boolean()),
   chatId: RecordIdSchema,
   streamId: v.optional(v.id("streams")),
   from: v.union(v.literal("user"), v.literal("assistant")),

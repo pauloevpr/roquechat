@@ -1,4 +1,5 @@
 
+
 # TODO: 
 
 Core 
@@ -17,7 +18,6 @@ Core
 
 GUI
 - [ ] Basic styling
-- [ ] Cancel current stream
 - [ ] Delete chat
 - [ ] Search chats by title or content
 - [ ] Group chats by date

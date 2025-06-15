@@ -9,15 +9,17 @@ import { createAsync, useSearchParams } from "@solidjs/router"
 import { createMarked } from "../components/marked"
 import { SelectableModel, useModelSelector } from "./models"
 
+
 export function ChatPage() {
   let { convex } = useConvex()
   let store = SyncStore.use()
   let [searchParams, setSearchParams] = useSearchParams()
   let chatId = createMemo(() => searchParams.chatId as Id<"records"> | undefined)
-  let streaming = createMemo(() => false)
+  let [streamingMessageId, setStreamingMessageId] = createSignal<Id<"records"> | undefined>(undefined)
+  let streaming = createMemo(() => !!streamingMessageId())
   let [messages, setMessages] = createStore([] as Message[])
   let refs = {
-    main: undefined as undefined | HTMLDivElement,
+    messages: undefined as undefined | HTMLDivElement,
     input: undefined as undefined | HTMLTextAreaElement
   }
   let [selectedModel, SelectModelButton] = useModelSelector()
@@ -43,8 +45,8 @@ export function ChatPage() {
   })
 
   function scrollToBottom() {
-    if (refs.main) {
-      refs.main?.scrollTo({ top: refs.main.scrollHeight, behavior: "instant" })
+    if (refs.messages) {
+      refs.messages?.scrollTo({ top: refs.messages.scrollHeight, behavior: "instant" })
     }
   }
 
@@ -96,38 +98,66 @@ export function ChatPage() {
     setMessages(list => [...list].slice(0, index + 1))
   }
 
+  function onMessageStreaming(messageId: string, status: "started" | "finished") {
+    if (status === "finished") {
+      setStreamingMessageId(undefined)
+    } else {
+      setStreamingMessageId(messageId as Id<"records">)
+    }
+  }
+
+  function onCancel() {
+    let messageId = streamingMessageId()
+    if (!messageId) return
+    convex.mutation(api.functions.cancelResponse, { messageId: messageId })
+  }
+
   return (
     <div class="grid grid-cols-[auto_1fr]">
       <ChatList />
       <main
-        ref={refs.main}
-        class="p-10 overflow-y-auto h-screen">
-        <div class="space-y-4 py-6">
-          <Index each={messages}>
-            {(message) => (
-              <MessageItem
-                message={message()}
-                model={selectedModel()}
-                onEdited={onMessageEdited}
-              />
-            )}
-          </Index >
-        </div >
-        <form onSubmit={onSubmit}>
-          <textarea
-            class="border-2 border-gray-300 rounded-md p-2"
-            name="message"
-            classList={{ "bg-gray-200": streaming() }}
-            required
-            ref={refs.input} />
-          <Show when={!streaming()}>
-            <button
-              type="submit"
-              disabled={streaming()}
-            >Send</button>
-          </Show>
-        </form>
-        <SelectModelButton />
+        class="relative"
+      >
+        <div class="relative p-10 overflow-y-auto h-screen"
+          ref={refs.messages}
+        >
+          <div class="space-y-4 py-6 pb-20">
+            <Index each={messages}>
+              {(message) => (
+                <MessageItem
+                  message={message()}
+                  model={selectedModel()}
+                  onEdited={onMessageEdited}
+                  onStreaming={(status) => onMessageStreaming(message().id, status)}
+                />
+              )}
+            </Index >
+          </div >
+        </div>
+        <div class="absolute bottom-0 left-0 right-0 bg-blue-100">
+          <form onSubmit={onSubmit}
+            class="flex gap-2">
+            <textarea
+              class="border-2 border-gray-300 rounded-md p-2 flex-grow"
+              name="message"
+              classList={{ "bg-gray-200": streaming() }}
+              required
+              ref={refs.input} />
+            <div>
+              <Show when={!streaming()}>
+                <button
+                  class="bg-blue-500"
+                  type="submit"
+                  disabled={streaming()}
+                >Send</button>
+              </Show>
+              <Show when={streaming()}>
+                <button class="bg-red-500" type="button" onClick={onCancel}>Cancel</button>
+              </Show>
+            </div>
+          </form>
+          <SelectModelButton />
+        </div>
       </main >
     </div>
   )
@@ -142,7 +172,7 @@ function ChatList() {
 
   let chats = createAsync(async () => {
     let chats = await store.chats.all()
-    chats.sort((a, b) => b.updatedAt - a.updatedAt)
+    chats.sort((a, b) => b.lastMessageAt - a.lastMessageAt)
     return chats
   })
 
@@ -230,6 +260,7 @@ function MessageItem(props: {
   message: Message,
   model: SelectableModel | undefined,
   onEdited: (messageId: string) => void,
+  onStreaming: (status: "started" | "finished") => void,
 }) {
   let marked = createMarked()
   let { convex } = useConvex()
@@ -254,7 +285,8 @@ function MessageItem(props: {
 
   createEffect(() => {
     if (unsubscribe) return
-    if (props.message.streaming && props.message.streamId) {
+    if (props.message.streamId) {
+      props.onStreaming("started")
       unsubscribe = convex.onUpdate(
         api.functions.getStream,
         { id: props.message.streamId },
@@ -262,6 +294,7 @@ function MessageItem(props: {
           let newContent = stream?.content || []
           setContent(newContent.join(""))
           if (stream?.finished) {
+            props.onStreaming("finished")
             unsubscribe?.()
           }
         }
