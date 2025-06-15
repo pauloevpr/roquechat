@@ -17,11 +17,16 @@ export function ChatPage() {
   let [streamingMessageId, setStreamingMessageId] = createSignal<Id<"records"> | undefined>(undefined)
   let streaming = createMemo(() => !!streamingMessageId())
   let [messages, setMessages] = createStore([] as Message[])
+  let [autoScroll, setAutoScroll] = createSignal(false)
   let refs = {
     messages: undefined as undefined | HTMLDivElement,
     input: undefined as undefined | HTMLTextAreaElement
   }
   let [selectedModel, SelectModelButton] = useModelSelector()
+
+  createEffect(() => {
+    console.log("### autoScroll", autoScroll())
+  })
 
   createEffect((previousChat: Id<"records"> | undefined) => {
     let allMessages = store.messages.all()
@@ -45,12 +50,13 @@ export function ChatPage() {
   })
 
   function scrollToBottom() {
+    console.log("### scrollToBottom")
     if (refs.messages) {
       refs.messages?.scrollTo({ top: refs.messages.scrollHeight, behavior: "instant" })
     }
   }
 
-  async function onSubmit(e: SubmitEvent) {
+  async function sendMessage(e: SubmitEvent) {
     e.preventDefault()
     let form = e.target as HTMLFormElement
     const formData = new FormData(form)
@@ -74,6 +80,7 @@ export function ChatPage() {
       createdAt: (lastMessage?.createdAt || 0) + 1, // to assure the message appears at the bottom
       updatedAt: (lastMessage?.createdAt || 0) + 1, // to assure the message appears at the bottom
     }])
+    setAutoScroll(true)
 
     let result = await convex.mutation(api.functions.sendMessage, {
       message: content,
@@ -96,11 +103,16 @@ export function ChatPage() {
     let index = messages.findIndex(message => message.id === messageId)
     if (index === -1) return
     setMessages(list => [...list].slice(0, index + 1))
+    setAutoScroll(true)
   }
 
-  function onMessageStreaming(messageId: string, status: "started" | "finished") {
+  function onMessageStreaming(messageId: string, status: "started" | "finished" | "updated") {
     if (status === "finished") {
       setStreamingMessageId(undefined)
+    } else if (status === "updated") {
+      if (autoScroll()) {
+        scrollToBottom()
+      }
     } else {
       setStreamingMessageId(messageId as Id<"records">)
     }
@@ -112,6 +124,12 @@ export function ChatPage() {
     convex.mutation(api.functions.cancelResponse, { messageId: messageId })
   }
 
+  function onScroll(el: HTMLDivElement) {
+    let threshold = 50
+    let atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < threshold
+    setAutoScroll(atBottom)
+  }
+
   return (
     <div class="grid grid-cols-[auto_1fr]">
       <ChatList />
@@ -120,6 +138,7 @@ export function ChatPage() {
       >
         <div class="relative p-10 overflow-y-auto h-screen"
           ref={refs.messages}
+          onScroll={(e) => { onScroll(e.currentTarget) }}
         >
           <div class="space-y-4 py-6 pb-20">
             <Index each={messages}>
@@ -135,7 +154,7 @@ export function ChatPage() {
           </div >
         </div>
         <div class="absolute bottom-0 left-0 right-0 bg-blue-100">
-          <form onSubmit={onSubmit}
+          <form onSubmit={sendMessage}
             class="flex gap-2">
             <textarea
               class="border-2 border-gray-300 rounded-md p-2 flex-grow"
@@ -274,7 +293,7 @@ function MessageItem(props: {
   message: Message,
   model: SelectableModel | undefined,
   onEdited: (messageId: string) => void,
-  onStreaming: (status: "started" | "finished") => void,
+  onStreaming: (status: "started" | "updated" | "finished") => void,
 }) {
   let marked = createMarked()
   let { convex } = useConvex()
@@ -311,6 +330,7 @@ function MessageItem(props: {
             props.onStreaming("finished")
             unsubscribe?.()
           }
+          props.onStreaming("updated")
         }
       )
     }

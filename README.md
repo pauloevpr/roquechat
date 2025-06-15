@@ -18,7 +18,6 @@ Core
 
 GUI
 - [ ] Basic styling
-- [ ] Auto scroll
 - [ ] Search chats by title or content
 - [ ] Group chats by date
 - [ ] Copy code block
