@@ -1,14 +1,15 @@
 import "highlight.js/styles/github.css";
-import { createEffect, createMemo, createResource, createSignal, For, Index, onCleanup, Show, untrack, VoidProps } from "solid-js"
+import { createEffect, createMemo, createResource, createSignal, For, Index, onCleanup, onMount, Show, untrack, VoidProps } from "solid-js"
 import { api } from "../../convex/_generated/api"
 import { Id } from "../../convex/_generated/dataModel"
 import { SyncStore, Message, Chat } from "../lib/sync"
 import { createStore } from "solid-js/store"
 import { useConvex } from "../lib/convex/provider"
-import { createAsync, useSearchParams } from "@solidjs/router"
+import { createAsync, useLocation, useSearchParams } from "@solidjs/router"
 import { createMarked } from "../components/marked"
 import { SelectableModel, useModelSelector } from "./models"
-
+import { useSearch } from "./search";
+import { useKeyboardListener } from "../components/utils";
 
 export function ChatPage() {
   let { convex } = useConvex()
@@ -22,7 +23,6 @@ export function ChatPage() {
     input: undefined as undefined | HTMLTextAreaElement
   }
   let [selectedModel, SelectModelButton] = useModelSelector()
-
 
   createEffect((previousChat: Id<"records"> | undefined) => {
     let allMessages = store.messages.all()
@@ -46,9 +46,7 @@ export function ChatPage() {
   })
 
   function scrollToBottom() {
-    if (refs.messages) {
-      refs.messages?.scrollTo({ top: refs.messages.scrollHeight, behavior: "instant" })
-    }
+    refs.messages?.scrollTo({ top: refs.messages.scrollHeight, behavior: "instant" })
   }
 
   async function sendMessage(e: SubmitEvent) {
@@ -176,6 +174,12 @@ function ChatList() {
     return chats
   })
 
+  let { showSearch, SearchDialog } = useSearch()
+
+  useKeyboardListener("ctrl", "k", () => {
+    showSearch()
+  })
+
   function signOut() {
     auth.signOut()
   }
@@ -186,6 +190,7 @@ function ChatList() {
         <li>
           <a href="/">New Chat</a>
         </li>
+        <button class="border" onClick={showSearch}>Search</button>
         <For each={chats()}>
           {(chat) => (
             <ChatListItem
@@ -202,6 +207,7 @@ function ChatList() {
       >
         Sign Out
       </button>
+      <SearchDialog />
     </aside>
   )
 }
@@ -277,26 +283,21 @@ function MessageItem(props: {
   onEdited: (messageId: string) => void,
   onStreaming: (status: "started" | "finished") => void,
 }) {
+  let unsubscribe: Function | undefined = undefined
   let marked = createMarked()
   let { convex } = useConvex()
   let [content, setContent] = createSignal("")
+  let rootRef = undefined as undefined | HTMLDivElement
+  let [editing, setEditing] = createSignal(false)
+  let location = useLocation()
+  let [html] = createResource(content, (content) => {
+    return marked.parse(content)
+  })
+  let canEdit = createMemo(() => props.message.from === "user")
 
   createEffect(() => {
     setContent(props.message.content)
   })
-
-  // let [dynamicContent, setDynamicContent] = createSignal<string[] | undefined>(undefined)
-  // let content = createMemo(() => {
-  //   return dynamicContent() || [props.message.content]
-  // })
-  let canEdit = createMemo(() => props.message.from === "user")
-  let [editing, setEditing] = createSignal(false)
-
-  let [html] = createResource(content, (content) => {
-    return marked.parse(content)
-  })
-
-  let unsubscribe: Function | undefined = undefined
 
   createEffect(() => {
     if (unsubscribe) return
@@ -353,7 +354,7 @@ function MessageItem(props: {
   }
 
   return (
-    <div>
+    <div id={props.message.id}>
       <Show when={!editing()}>
         <article class=" border-2 border-gray-300 rounded-md p-2">
           <div class="prose" innerHTML={html()} />
@@ -391,3 +392,4 @@ function useCurrentChatId() {
   }
   return [chatId, setChatId] as [typeof chatId, typeof setChatId]
 }
+

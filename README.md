@@ -1,5 +1,4 @@
 
-
 # TODO: 
 
 Core 
@@ -18,7 +17,6 @@ Core
 
 GUI
 - [ ] Basic styling
-- [ ] Search chats by title or content
 - [ ] Group chats by date
 - [ ] Copy code block
 - [ ] Pin thread
@@ -33,3 +31,6 @@ Extra
 - [ ] Dictate message
 - [ ] Multiple themes 
 - [ ] Select codeblock color theme
+
+Bugs
+- scrolling to the bottom when switching chats is not working sometimes
