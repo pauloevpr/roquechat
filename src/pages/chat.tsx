@@ -261,11 +261,12 @@ function ChatListItem(props: VoidProps<{
       <Show when={!editing()}>
         <a
           classList={{
-            "font-semibold": props.selected
+            "font-semibold": props.selected,
+            "animate-pulse": !props.chat.title
           }}
           class="group whitespace-nowrap text-ellipsis"
           href={`/?chatId=${props.chat.id}`}>
-          {props.chat.title ?? "New Chat"}
+          {props.chat.title || "..."}
           <button
             class="invisible group-hover:visible border"
             onClick={startEditing}>Edit</button>
@@ -288,9 +289,8 @@ function MessageItem(props: {
   let marked = createMarked()
   let { convex } = useConvex()
   let [content, setContent] = createSignal("")
-  let rootRef = undefined as undefined | HTMLDivElement
+  let [chatId, setChatId] = useCurrentChatId()
   let [editing, setEditing] = createSignal(false)
-  let location = useLocation()
   let [html] = createResource(content, (content) => {
     return marked.parse(content)
   })
@@ -355,6 +355,14 @@ function MessageItem(props: {
     navigator.clipboard.writeText(props.message.content)
   }
 
+  async function branchOff() {
+    // TODO: add loading indicator?
+    let newChatId = await convex.mutation(api.functions.branchOff, {
+      messageId: props.message.id as Id<"records">,
+    })
+    setChatId(newChatId)
+  }
+
   return (
     <div id={props.message.id}>
       <Show when={!editing()}>
@@ -365,6 +373,10 @@ function MessageItem(props: {
           <button class="border" onClick={() => setEditing(true)}>Edit</button>
         </Show>
         <button class="border" onClick={copyToClipboard}>Copy</button>
+        <Show when={props.message.from === "assistant"}>
+          <button class="border"
+            onClick={branchOff}>Branch off</button>
+        </Show>
       </Show>
       <Show when={editing()}>
         <form action="" onSubmit={onEditSubmit}>

@@ -1,4 +1,5 @@
 
+
 # TODO: 
 
 Core 
@@ -7,9 +8,7 @@ Core
 - [x] Syntax Highlighting
 - [x] Resumable Streams
 - [x] Bring Your Own Key
-- [ ] Chat Branching as new chat
-- [ ] Chat Branching with new model
-- [x] Chat Branching by editing message
+- [x] Chat Branching
 - [ ] Attachment Support
 - [ ] Web Search
 - [ ] Chat Sharing
@@ -22,6 +21,7 @@ GUI
 - [ ] Copy code block
 - [ ] Pin thread
 - [ ] Dark mode support
+- [ ] Retry message (same as edit)
 
 Extra
 - [ ] Reasoning indicators

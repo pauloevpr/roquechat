@@ -8,6 +8,45 @@ import { getAuthUserId } from "@convex-dev/auth/server";
 import { ai, supportedModels } from "./llm";
 
 
+export const branchOff = mutation({
+  args: {
+    messageId: v.id("records")
+  },
+  handler: async (ctx, { messageId }) => {
+    let userId = await getRequiredUserId(ctx)
+    let messageRecord = await ctx.db.get(messageId)
+    let message = validate.message(messageRecord, userId, "assistant")
+    let chatId = message.data.chatId
+    let chatRecord = await ctx.db.get(chatId)
+    let chat = validate.chat(chatRecord, userId)
+    let now = Date.now()
+    let newChatId = await ctx.db.insert("records", {
+      type: "chats",
+      updatedAt: now,
+      deleted: false,
+      data: { ...chat.data, lastMessageAt: now },
+      userId
+    })
+    let allMessages = await ctx.db.query("records")
+      .withIndex("by_chatId_deleted",
+        (q) => q.eq("data.chatId", chatId).eq("deleted", false)
+      )
+      .collect()
+    allMessages.sort((a, b) => a._creationTime - b._creationTime)
+    for (let copyingMessage of allMessages) {
+      await ctx.db.insert("records", {
+        type: "messages",
+        updatedAt: now,
+        deleted: false,
+        data: { ...copyingMessage.data, chatId: newChatId },
+        userId
+      })
+      if (copyingMessage._id === messageId) break
+    }
+    return newChatId
+  }
+})
+
 export const cancelResponse = mutation({
   args: {
     messageId: v.id("records")
