@@ -1,50 +1,78 @@
-import { createMemo, createSignal, For, Show } from "solid-js"
+import { createEffect, createMemo, createSignal, For, Show } from "solid-js"
 import { api } from "../../convex/_generated/api"
 import { SyncStore } from "../lib/sync"
 import { useQuery } from "../lib/convex/provider"
 import { createAsync, useNavigate, useSearchParams } from "@solidjs/router"
 import { convex } from "../lib/convex/client"
 import { createPersistentSignal } from "../components/utils"
+import { useOpenRouter } from "../lib/openrouter"
 
 
-export type SelectableModel = { model: string, apiKey: string }
+
+export type SelectableModel = { id: string, name: string, apiKey: string, provider: string }
 
 export function useModelSelector() {
   let navigate = useNavigate()
   let store = SyncStore.use()
-  let models = useQuery(api.functions.getModels, {})
+  let baseModels = useQuery(api.functions.getModels, {})
+  createEffect(() => {
+    console.log("standardModels", baseModels())
+  })
   let [searchParams, setSearchParams] = useSearchParams()
   let showSelectDialog = createMemo(() => searchParams.select === "true")
+  let openRouter = useOpenRouter()
 
   let [selectedModelId, setSelectedModelId] = createPersistentSignal("selectedModel", searchParams.model)
-  let modelsWithConfigs = createAsync(async () => {
-    let currentModels = models() ?? []
+  let allModels = createAsync(async () => {
+    let models = (baseModels() ?? []).map<SelectableModel>(model => ({
+      ...model,
+      apiKey: ""
+    }))
+    if (openRouter.key) {
+      let openRouterModels = openRouter.models.map<SelectableModel>(model => ({
+        id: model.id,
+        name: model.name,
+        provider: "openrouter",
+        apiKey: openRouter.key || "",
+      }))
+      models.push(...openRouterModels)
+    }
     let [configs, privateConfigs] = await Promise.all([
       store.modelConfigs.all(),
       store.privateModelConfigs.all()
     ])
     let allConfigs = [...configs, ...privateConfigs]
-    return currentModels.map(model => {
+    return models.map(model => {
       let config = allConfigs.find(c => c.model === model.name)
-      return {
-        model: model.name,
-        apiKey: config?.apiKey || "",
+      if (config && !model.apiKey) {
+        model.apiKey = config.apiKey
       }
+      return model
     })
+  })
+  let groupedModels = createMemo(() => {
+    let groups = new Map<string, SelectableModel[]>()
+    for (let model of allModels() ?? []) {
+      let group = groups.get(model.provider) ?? []
+      group.push(model)
+      groups.set(model.provider, group)
+    }
+    return Array.from(
+      groups.entries()).map(([provider, models]) => ({ provider, models })
+      )
   })
 
   let { show: showSettings, Dialog: SettingsDialog } = useSettingsDialog()
 
-  let selectedModel = createMemo(() => {
-    let model = selectedModelId() as string | undefined
-    if (!model) return
-    return modelsWithConfigs()?.find(m => m.model === model)
+  let selectedModel = createMemo<SelectableModel | undefined>(() => {
+    let modelId = selectedModelId() as string | undefined
+    if (!modelId) return
+    return allModels()?.find(m => m.name === modelId)
   })
 
   function select(model: SelectableModel) {
-    let config = modelsWithConfigs()?.find(m => m.model === model.model)
-    if (config?.apiKey) {
-      setSelectedModelId(model.model)
+    if (model.apiKey) {
+      setSelectedModelId(model.name)
       navigate(-1)
     } else {
       showSettings(model)
@@ -55,25 +83,56 @@ export function useModelSelector() {
     setSearchParams({ ...searchParams, select: "true" })
   }
 
+  function disconnect() {
+    let confirmed = window.confirm("Are you sure you want to disconnect from OpenRouter?")
+    if (!confirmed) return
+    openRouter.disconnect()
+  }
+
   function SelectDialog() {
     return (
       <>
         <dialog open class="flex justify-center items-center fixed top-0 left-0 w-full h-full bg-black/50">
-          <div class="bg-white p-4 rounded-md">
+          <div class="bg-white p-4 rounded-md max-h-[80vh] overflow-y-auto">
             <h1>Select Model</h1>
             <ul class="space-y-2">
-              <For each={modelsWithConfigs()}>
-                {(model) => (
-                  <li class="bg-gray-100 rounded px-2 py-1"
-                    classList={{
-                      "font-semibold": selectedModel()?.model === model.model
-                    }}
-                  >
-                    <button onClick={() => select(model)}>{model.model}</button>
-                  </li>
+              <For each={groupedModels()}>
+                {(group) => (
+                  <>
+                    <li>
+                      <span class="font-semibold block">{group.provider}</span>
+                    </li>
+                    <For each={group.models}>
+                      {(model) => (
+                        <li class="bg-gray-100 rounded px-2 py-1"
+                          classList={{
+                            "font-semibold": selectedModel()?.name === model.name
+                          }}
+                        >
+                          <button onClick={() => select(model)}>{model.name}</button>
+                        </li>
+                      )}
+                    </For>
+                  </>
                 )}
               </For>
             </ul>
+            <Show when={openRouter.error}>
+              <p class="text-red-500">
+                OpenRouter integration failed: {openRouter.error}
+              </p>
+            </Show>
+            <Show when={openRouter.key}>
+              <p class="text-blue-700 font-medium">You are connected to OpenRouter</p>
+              <button class="" onClick={disconnect}>Disconnect</button>
+            </Show>
+            <Show when={!openRouter.key}>
+              <button
+                class="bg-blue-500 text-white px-4 py-2 rounded-md text-lg"
+                onClick={openRouter.connect}>
+                Connect OpenRouter
+              </button>
+            </Show>
             <button onClick={() => navigate(-1)}>Cancel</button>
           </div >
         </dialog>
@@ -85,7 +144,7 @@ export function useModelSelector() {
     let label = createMemo(() => {
       let model = selectedModel()
       if (!model) return "Select Model"
-      return model.model
+      return model.name
     })
     return (
       <>
@@ -119,7 +178,6 @@ function useSettingsDialog() {
   function Dialog() {
 
     async function onSubmit(e: SubmitEvent) {
-      // TODO: CONTINUE: this is not working
       e.preventDefault()
       let form = e.target as HTMLFormElement
       let formData = new FormData(form)
@@ -150,8 +208,8 @@ function useSettingsDialog() {
         <dialog open class="flex justify-center items-center fixed top-0 left-0 w-full h-full bg-black/50">
           <div class="bg-white p-4 rounded-md">
             <form onSubmit={onSubmit}>
-              <h1>{model()?.model} Settings</h1>
-              <input type="hidden" name="model" value={model()?.model} />
+              <h1>{model()?.name} Settings</h1>
+              <input type="hidden" name="model" value={model()?.name} />
               <input
                 name="apiKey"
                 placeholder="Enter API Key"

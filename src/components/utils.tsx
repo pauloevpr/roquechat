@@ -7,12 +7,15 @@ export function createPersistentSignal<T>(key: string, initialValue: T): [Access
   }
   let [getter, setter] = createSignal(initialValue)
   createEffect(() => {
-    localStorage.setItem(key, JSON.stringify(getter()))
+    let value = getter()
+    if (value === null || value === undefined) {
+      localStorage.removeItem(key)
+    } else {
+      localStorage.setItem(key, JSON.stringify(value))
+    }
   })
   return [getter, setter]
 }
-
-
 
 
 export function useKeyboardListener(

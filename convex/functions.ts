@@ -7,6 +7,7 @@ import { GenericMutationCtx, GenericQueryCtx } from "convex/server";
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { ai, supportedModels } from "./llm";
 
+
 export const cancelResponse = mutation({
   args: {
     messageId: v.id("records")
@@ -37,8 +38,9 @@ export const editMessage = mutation({
     messageId: v.id("records"),
     content: v.string(),
     model: v.object({
-      name: v.string(),
+      id: v.string(),
       apiKey: v.string(),
+      provider: v.optional(v.string())
     }),
   },
   handler: async (ctx, { messageId, content, model }) => {
@@ -96,10 +98,7 @@ export const editMessage = mutation({
       chatId: chat._id,
       chatTitle: chat.data.title,
       responseMessageId,
-      model: {
-        name: model.name,
-        apiKey: model.apiKey,
-      },
+      model
     })
     return {
       message: { ...messageData, id: messageId }
@@ -111,10 +110,11 @@ export const getModels = query({
   args: {},
   handler: async (ctx) => {
     await getRequiredUserId(ctx);
-    let result: { vendor: string, name: string }[] = []
-    for (let vendor of Object.keys(supportedModels)) {
-      for (let name of Object.keys((supportedModels as any)[vendor])) {
-        result.push({ vendor, name })
+    let result: { provider: string, id: string, name: string }[] = []
+    for (let provider of Object.keys(supportedModels)) {
+      for (let id of Object.keys((supportedModels as any)[provider])) {
+        let name = (supportedModels as any)[provider][id]
+        result.push({ provider, id, name })
       }
     }
     return result
@@ -234,8 +234,9 @@ export const sendMessage = mutation({
     message: v.string(),
     chatId: v.optional(v.id("records")),
     model: v.object({
-      name: v.string(),
+      id: v.string(),
       apiKey: v.string(),
+      provider: v.optional(v.string())
     }),
   },
   handler: async (ctx, { message, chatId, model }) => {
@@ -329,8 +330,9 @@ export const startStream = internalAction({
     chatTitle: v.string(),
     responseMessageId: v.id("records"),
     model: v.object({
-      name: v.string(),
-      apiKey: v.string()
+      id: v.string(),
+      apiKey: v.string(),
+      provider: v.optional(v.string())
     })
   },
   handler: async (ctx, { streamId, chatId, chatTitle, responseMessageId, model }) => {
@@ -343,7 +345,7 @@ export const startStream = internalAction({
       .filter(x => x.content.length > 0)
     try {
       let abort = new AbortController()
-      await ai.model(model.name, model.apiKey, abort.signal).stream(chatHistory, async (content) => {
+      await ai.model(model, { signal: abort.signal }).stream(chatHistory, async (content) => {
         if (content) {
           let result = await ctx.runMutation(internal.functions.appendStreamContent, {
             streamId,
@@ -364,7 +366,7 @@ export const startStream = internalAction({
       })
       if (!chatTitle) {
         let responseContent = await ctx.runQuery(internal.functions.getStreamContent, { streamId })
-        let newTitle = await ai.model(model.name, model.apiKey, abort.signal).chat(
+        let newTitle = await ai.model(model, { signal: abort.signal }).chat(
           [
             ...chatHistory,
             { role: "assistant", content: responseContent },

@@ -15,7 +15,8 @@ const StorageKeys = {
 
 const ConvexContext = createContext<ConvexContextValue>()
 
-export const ConvexProvider = (props: ParentProps<{ client: ConvexClient }>) => {
+
+export function ConvexProvider(props: ParentProps<{ client: ConvexClient }>) {
   let [store, setStore] = createStore<ConvexContextValue>({
     convex: props.client,
     auth: {

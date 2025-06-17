@@ -17,18 +17,23 @@ export interface LLM {
 }
 
 export const ai = {
-  // openai(model: string, apiKey: string): LLM { return openai(model, apiKey) },
-  // google(model: string, apiKey: string): LLM { return goggle(model, apiKey) },
-  model(name: string, apiKey: string, abort: AbortSignal): LLM {
-    if (name in supportedModels.google) return google(name, apiKey, abort)
-    if (name in supportedModels.openai) return openai(name, apiKey, abort)
-    throw new Error(`Model ${name} not supported`)
+  model(
+    model: { id: string, apiKey: string, provider?: string },
+    options: { signal: AbortSignal }
+  ): LLM {
+    if (model.provider === "openrouter") return openrouter(model.id, model.apiKey, options?.signal)
+    if (model.id in supportedModels.google) return google(model.id, model.apiKey, options?.signal)
+    if (model.id in supportedModels.openai) return openai(model.id, model.apiKey, options?.signal)
+    throw new Error(`Model ${model.id} not supported`)
   }
 }
 
-function openai(model: string, apiKey: string, abort: AbortSignal) {
-  if (!(model in supportedModels.openai)) throw new Error(`OpenAI model ${model} not supported`)
-  const openai = new OpenAI({ apiKey });
+function openrouter(model: string, apiKey: string, abort: AbortSignal) {
+  return openai(model, apiKey, abort, "https://openrouter.ai/api/v1")
+}
+
+function openai(model: string, apiKey: string, abort: AbortSignal, baseUrl?: string) {
+  const openai = new OpenAI({ apiKey, baseURL: baseUrl });
   return {
     async chat(messages: ChatEntry[]) {
       const response = await openai.chat.completions.create({
@@ -54,7 +59,6 @@ function openai(model: string, apiKey: string, abort: AbortSignal) {
 }
 
 function google(model: string, apiKey: string, abort: AbortSignal) {
-  if (!(model in supportedModels.google)) throw new Error(`Google model ${model} not supported`)
   let google = new GoogleGenAI({ apiKey });
   return {
     async chat(messages: ChatEntry[]) {

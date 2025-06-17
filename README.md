@@ -23,6 +23,7 @@ GUI
 - [ ] Dark mode support
 
 Extra
+- [ ] Reasoning indicators
 - [ ] Retry message
 - [ ] Switch to previous branches after editing
 - [ ] Deploy locally for privacy
@@ -34,3 +35,5 @@ Extra
 
 Bugs
 - scrolling to the bottom when switching chats is not working sometimes
+- using a reasoning model will produce large conversation title because
+- reasoning content is dislayed as part of the chat response

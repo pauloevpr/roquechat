@@ -14,6 +14,7 @@ export type Message = MessageSchema & LocalRecord
 export type ModelConfig = ModelConfigSchema & LocalRecord
 export type PrivateModelConfig = Pick<ModelConfigSchema, "model" | "apiKey"> & LocalRecord
 
+
 export const SyncStore = createWireStore({
   name: "sync",
   definition: {
@@ -25,7 +26,7 @@ export const SyncStore = createWireStore({
   sync: async ({ records, namespace, syncCursor }) => {
     let request: any = {}
     for (let record of records) {
-      if (record.type === "privateModelConfigs") continue  // we dont want to store private models on the server
+      if (record.type === "privateModelConfigs") continue  // we dont want to send model configs to the server because they contain api keys
       if (!request[record.type]) {
         request[record.type] = []
       }

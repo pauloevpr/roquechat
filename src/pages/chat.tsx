@@ -14,28 +14,28 @@ import { useKeyboardListener } from "../components/utils";
 export function ChatPage() {
   let { convex } = useConvex()
   let store = SyncStore.use()
+  let [messages, setMessages] = createStore([] as Message[])
   let [chatId, setChatId] = useCurrentChatId()
   let [streamingMessageId, setStreamingMessageId] = createSignal<Id<"records"> | undefined>(undefined)
   let streaming = createMemo(() => !!streamingMessageId())
-  let [messages, setMessages] = createStore([] as Message[])
+  let [selectedModel, SelectModelButton] = useModelSelector()
   let refs = {
     messages: undefined as undefined | HTMLDivElement,
     input: undefined as undefined | HTMLTextAreaElement
   }
-  let [selectedModel, SelectModelButton] = useModelSelector()
 
   createEffect((previousChat: Id<"records"> | undefined) => {
     let allMessages = store.messages.all()
     let currentChat = chatId()
     let chatChanged = currentChat !== previousChat
     untrack(() => {
-      if (!currentChat) {
-        setMessages([])
-      } else {
+      if (currentChat) {
         allMessages.then(matchingMessages => {
           matchingMessages = matchingMessages.filter(x => x.chatId === currentChat).sort((a, b) => a.createdAt - b.createdAt)
           setMessages(matchingMessages)
         })
+      } else {
+        setMessages([])
       }
       if (chatChanged) {
         setStreamingMessageId(undefined)
@@ -62,7 +62,7 @@ export function ChatPage() {
       alert("Please select a model")
       return
     }
-    // add a message to the list right away for optimistic update
+    // add a temp message to the list right away for optimistic update
     let lastMessage = messages[messages.length - 1]
     let newMessageIndex = messages.length
     setMessages(prev => [...prev, {
@@ -78,12 +78,13 @@ export function ChatPage() {
       message: content,
       chatId: chatId(),
       model: {
-        name: model.model,
+        id: model.id,
         apiKey: model.apiKey,
+        provider: model.provider,
       }
     })
 
-    // update the message with the actual one from the server
+    // update the temp message with the actual one from the server
     setMessages(newMessageIndex, result.message)
 
     if (!chatId()) {
@@ -340,8 +341,9 @@ function MessageItem(props: {
       messageId: props.message.id as Id<"records">,
       content: content,
       model: {
-        name: props.model.model,
+        id: props.model.id,
         apiKey: props.model.apiKey,
+        provider: props.model.provider,
       },
     })
     setContent(content)

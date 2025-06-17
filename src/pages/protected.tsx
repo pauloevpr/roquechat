@@ -3,6 +3,7 @@ import { createEffect, ParentProps, Show } from "solid-js"
 import { useConvex, useQuery } from "../lib/convex/provider"
 import { api } from "../../convex/_generated/api"
 import { LiveSync, SyncStore } from "../lib/sync"
+import { OpenRouterProvider } from "../lib/openrouter"
 
 
 export function ProtectedWrapper(props: RouteSectionProps) {

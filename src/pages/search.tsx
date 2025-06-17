@@ -61,9 +61,6 @@ function SearchBox(props: VoidProps<{
   type Group = { title: string, items: Item[] }
   let navigate = useNavigate()
   let store = SyncStore.use()
-  let allMessages = createAsync(async () => {
-    return await store.messages.all()
-  })
   let [search, setSearch] = createSignal("")
   let inputRef = undefined as undefined | HTMLInputElement
   let rootRef = undefined as undefined | HTMLDivElement
@@ -73,15 +70,16 @@ function SearchBox(props: VoidProps<{
   let selectedItem = createMemo(() => {
     return items()[selectedIndex()]
   })
+
   let data = createAsync(async () => {
     let chats = (await store.chats.all()).map(chat => ({
       ...chat,
       indexedTitle: chat.title.toLowerCase(),
-    }))
+    })).sort((a, b) => b.updatedAt - a.updatedAt)
     let messages = (await store.messages.all()).map(message => ({
       ...message,
       indexedContent: message.content.toLowerCase(),
-    }))
+    })).sort((a, b) => b.createdAt - a.createdAt)
     return { chats, messages }
   })
 
