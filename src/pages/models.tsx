@@ -3,7 +3,6 @@ import { api } from "../../convex/_generated/api"
 import { SyncStore } from "../lib/sync"
 import { useQuery } from "../lib/convex/provider"
 import { createAsync, useNavigate, useSearchParams } from "@solidjs/router"
-import { convex } from "../lib/convex/client"
 import { createPersistentSignal } from "../components/utils"
 import { useOpenRouter } from "../lib/openrouter"
 
@@ -20,9 +19,10 @@ export function useModelSelector() {
   })
   let [searchParams, setSearchParams] = useSearchParams()
   let showSelectDialog = createMemo(() => searchParams.select === "true")
+  let { show: showSettings, Dialog: SettingsDialog } = useSettingsDialog()
   let openRouter = useOpenRouter()
-
   let [selectedModelId, setSelectedModelId] = createPersistentSignal("selectedModel", searchParams.model)
+
   let allModels = createAsync(async () => {
     let models = (baseModels() ?? []).map<SelectableModel>(model => ({
       ...model,
@@ -37,19 +37,16 @@ export function useModelSelector() {
       }))
       models.push(...openRouterModels)
     }
-    let [configs, privateConfigs] = await Promise.all([
-      store.modelConfigs.all(),
-      store.privateModelConfigs.all()
-    ])
-    let allConfigs = [...configs, ...privateConfigs]
+    let configs = await store.modelConfigs.all()
     return models.map(model => {
-      let config = allConfigs.find(c => c.model === model.name)
+      let config = configs.find(c => c.id === model.id && c.provider === model.provider)
       if (config && !model.apiKey) {
         model.apiKey = config.apiKey
       }
       return model
     })
   })
+
   let groupedModels = createMemo(() => {
     let groups = new Map<string, SelectableModel[]>()
     for (let model of allModels() ?? []) {
@@ -62,17 +59,17 @@ export function useModelSelector() {
       )
   })
 
-  let { show: showSettings, Dialog: SettingsDialog } = useSettingsDialog()
-
   let selectedModel = createMemo<SelectableModel | undefined>(() => {
     let modelId = selectedModelId() as string | undefined
     if (!modelId) return
-    return allModels()?.find(m => m.name === modelId)
+    let model = allModels()?.find(m => m.id === modelId)
+    if (!model?.apiKey) return
+    return model
   })
 
-  function select(model: SelectableModel) {
+  function selectModel(model: SelectableModel) {
     if (model.apiKey) {
-      setSelectedModelId(model.name)
+      setSelectedModelId(model.id)
       navigate(-1)
     } else {
       showSettings(model)
@@ -109,7 +106,7 @@ export function useModelSelector() {
                             "font-semibold": selectedModel()?.name === model.name
                           }}
                         >
-                          <button onClick={() => select(model)}>{model.name}</button>
+                          <button onClick={() => selectModel(model)}>{model.name}</button>
                         </li>
                       )}
                     </For>
@@ -182,23 +179,15 @@ function useSettingsDialog() {
       let form = e.target as HTMLFormElement
       let formData = new FormData(form)
       let apiKey = formData.get("apiKey") as string
-      let storage = formData.get("storage") as string
-      let model = formData.get("model") as string
-      if (storage === "local") {
-        await store.privateModelConfigs.set(model, {
-          model,
-          apiKey,
-          id: model,
-          createdAt: Date.now(),
-          updatedAt: Date.now(),
-        })
-      } else if (storage === "server") {
-        // TODO: add loading indicator?
-        await convex.mutation(api.functions.saveModelConfig, {
-          model,
-          apiKey
-        })
-      }
+      let modelId = formData.get("modelId") as string
+      let modelProvider = formData.get("modelProvider") as string
+      await store.modelConfigs.set(modelId, {
+        id: modelId,
+        provider: modelProvider,
+        apiKey,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      })
       setModel(undefined)
       navigate(-1)
     }
@@ -206,33 +195,28 @@ function useSettingsDialog() {
     return (
       <Show when={showSettingsDialog()}>
         <dialog open class="flex justify-center items-center fixed top-0 left-0 w-full h-full bg-black/50">
-          <div class="bg-white p-4 rounded-md">
+          <div class="bg-white p-4 rounded-md max-w-md">
             <form onSubmit={onSubmit}>
               <h1>{model()?.name} Settings</h1>
-              <input type="hidden" name="model" value={model()?.name} />
+              <input type="hidden" name="modelId" value={model()?.id} />
+              <input type="hidden" name="modelProvider" value={model()?.provider} />
               <input
                 name="apiKey"
+                class="border p-2 rounded-md w-full"
                 placeholder="Enter API Key"
                 required
                 maxLength={512}
               />
-              <div class="mt-4 space-y-2">
-                <div>
-                  <label class="flex items-center gap-2">
-                    <input type="radio" name="storage" value="local" checked />
-                    <span>Save Local</span>
-                  </label>
-                </div>
-                <div>
-                  <label class="flex items-center gap-2">
-                    <input type="radio" name="storage" value="server" />
-                    <span>Save on Server</span>
-                  </label>
-                </div>
+              <div class="border my-6">
+                <p class="font-medium">How is your key used?</p>
+                <p class="text-gray-500">Your key is stored locally in the browser and it is sent with every request you make it. Your key is not logged or stored anywhere in the server.</p>
+                <a href="">Learn More</a>
               </div>
-              <button class="bg-blue-500 text-white px-4 py-2 rounded-md"
-                type="submit">Save</button>
-              <button onClick={() => navigate(-1)} type="button">Cancel</button>
+              <div>
+                <button class="bg-blue-500 text-white px-4 py-2 rounded-md"
+                  type="submit">Save</button>
+                <button onClick={() => navigate(-1)} type="button">Cancel</button>
+              </div>
             </form>
           </div>
         </dialog>

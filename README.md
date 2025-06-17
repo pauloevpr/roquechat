@@ -8,6 +8,7 @@ Core
 - [x] Resumable Streams
 - [x] Bring Your Own Key
 - [ ] Chat Branching as new chat
+- [ ] Chat Branching with new model
 - [x] Chat Branching by editing message
 - [ ] Attachment Support
 - [ ] Web Search

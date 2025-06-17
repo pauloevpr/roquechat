@@ -1,7 +1,7 @@
 import { defineSchema, defineTable } from "convex/server";
 import { Infer, v } from "convex/values";
 import { authTables } from "@convex-dev/auth/server";
-import { Id, DataModel } from "./_generated/dataModel";
+import { Id } from "./_generated/dataModel";
 
 
 export const RecordIdSchema = v.id("records")
@@ -31,16 +31,11 @@ export const StreamSchema = v.object({
   userId: v.id("users"),
 })
 
-export const ModelConfigSchema = v.object({
-  model: v.string(),
-  apiKey: v.string(),
-})
-
 export const RecordSchema = v.object({
   type: RecordTypeSchema,
   updatedAt: v.number(),
   deleted: v.boolean(),
-  data: v.union(ChatSchema, MessageSchema, ModelConfigSchema),
+  data: v.union(ChatSchema, MessageSchema),
   userId: v.id("users"),
 })
 
@@ -60,4 +55,3 @@ export type RecordBase = Infer<typeof RecordSchema> & { _id: Id<"records">; _cre
 export type RecordWithMessageData = RecordBase & { data: Message }
 export type RecordWithChatData = RecordBase & { data: Chat }
 export type RecordType = Infer<typeof RecordTypeSchema>
-export type ModelConfig = Infer<typeof ModelConfigSchema>

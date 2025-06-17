@@ -1,7 +1,7 @@
 import { onCleanup, ParentProps } from "solid-js"
 import { useConvex } from "./convex/provider"
 import { createWireStore } from '../solid-wire';
-import type { Chat as ChatSchema, Message as MessageSchema, ModelConfig as ModelConfigSchema } from '../../convex/schema';
+import type { Chat as ChatSchema, Message as MessageSchema } from '../../convex/schema';
 import { api } from '../../convex/_generated/api';
 import { Id } from '../../convex/_generated/dataModel';
 
@@ -11,8 +11,7 @@ import { convex } from './convex/client';
 type LocalRecord = { id: string, updatedAt: number, createdAt: number }
 export type Chat = ChatSchema & LocalRecord
 export type Message = MessageSchema & LocalRecord
-export type ModelConfig = ModelConfigSchema & LocalRecord
-export type PrivateModelConfig = Pick<ModelConfigSchema, "model" | "apiKey"> & LocalRecord
+export type ModelConfig = { provider: string, apiKey: string } & LocalRecord
 
 
 export const SyncStore = createWireStore({
@@ -21,12 +20,11 @@ export const SyncStore = createWireStore({
     chats: {} as Chat,
     messages: {} as Message,
     modelConfigs: {} as ModelConfig,
-    privateModelConfigs: {} as PrivateModelConfig,
   },
   sync: async ({ records, namespace, syncCursor }) => {
     let request: any = {}
     for (let record of records) {
-      if (record.type === "privateModelConfigs") continue  // we dont want to send model configs to the server because they contain api keys
+      if (record.type === "modelConfigs") continue  // we dont want to send model configs to the server because they contain api keys
       if (!request[record.type]) {
         request[record.type] = []
       }

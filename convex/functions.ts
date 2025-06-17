@@ -2,7 +2,7 @@ import { internalAction, internalMutation, internalQuery, mutation, query } from
 import { internal } from "./_generated/api";
 import { DataModel, Id } from "./_generated/dataModel";
 import { v } from "convex/values";
-import { ChatSchema, Message, RecordBase, MessageSchema, ModelConfigSchema, RecordType, RecordWithChatData, RecordWithMessageData } from "./schema";
+import { ChatSchema, Message, RecordBase, MessageSchema, RecordType, RecordWithChatData, RecordWithMessageData } from "./schema";
 import { GenericMutationCtx, GenericQueryCtx } from "convex/server";
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { ai, supportedModels } from "./llm";
@@ -121,26 +121,6 @@ export const getModels = query({
   }
 })
 
-export const saveModelConfig = mutation({
-  args: {
-    model: v.string(),
-    apiKey: v.string(),
-  },
-  handler: async (ctx, { model, apiKey }) => {
-    let userId = await getRequiredUserId(ctx)
-    await ctx.db.insert("records", {
-      userId,
-      type: "modelConfigs",
-      updatedAt: Date.now(),
-      deleted: false,
-      data: {
-        model,
-        apiKey,
-      },
-    })
-  }
-})
-
 export const liveSync = query({
   args: {
     cursor: v.optional(v.number())
@@ -192,13 +172,6 @@ export const sync = mutation({
         data: MessageSchema,
       })
     )),
-    modelConfigs: v.optional(v.array(
-      v.object({
-        id: v.id("records"),
-        state: v.union(v.literal("updated"), v.literal("deleted")),
-        data: ModelConfigSchema,
-      })
-    ))
   },
   handler: async (ctx, args) => {
     // TODO: should we limit the amount of records we proccess at a time?
@@ -206,7 +179,6 @@ export const sync = mutation({
     let allRecords = [
       ...(args.chats ?? []).map(x => ({ ...x, type: "chats" as RecordType })),
       ...(args.messages ?? []).map(x => ({ ...x, type: "messages" as RecordType })),
-      ...(args.modelConfigs ?? []).map(x => ({ ...x, type: "modelConfigs" as RecordType })),
     ]
     for (let record of allRecords) {
       let existingRecord = await ctx.db.get(record.id)
