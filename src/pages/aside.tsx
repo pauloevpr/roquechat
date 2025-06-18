@@ -2,14 +2,77 @@ import { createEffect, createMemo, createResource, createSignal, For, Index, onC
 import { api } from "../../convex/_generated/api"
 import { SyncStore, Chat } from "../lib/sync"
 import { useConvex, useQuery } from "../lib/convex/provider"
-import { createAsync, useNavigate } from "@solidjs/router"
+import { createAsync, useLocation, useNavigate } from "@solidjs/router"
 import { useSearch } from "./search";
 import { useKeyboardListener } from "../components/utils";
 import { Button, IconButton } from "../components/buttons";
-import { ChevronDownIcon, ChevronRightIcon, CircleStopIcon, CopyIcon, GithubIcon, LogoutIcon, PencilIcon, SearchIcon, SplitIcon, SquarePenIcon, TrashIcon } from "../components/icons";
+import { ChevronDownIcon, ChevronRightIcon, CircleStopIcon, CloseIcon, CopyIcon, GithubIcon, LogoutIcon, MenuIcon, PencilIcon, SearchIcon, SplitIcon, SquarePenIcon, TrashIcon } from "../components/icons";
 import { useCurrentChatId } from "./chat";
 import { useCurrentUser } from "./protected";
 import { Logo } from "../components/logo"
+
+
+export function SideBarButton() {
+  let [open, setOpen] = createSignal(false)
+  let dialogRef = undefined as HTMLDialogElement | undefined
+  let location = useLocation()
+
+  createEffect(() => {
+    // this is a hack to close the sidebar when links are clicked
+    let t2 = location.pathname
+    let t1 = { ...location.query }
+    close()
+  })
+
+  function onClickOutside(e: MouseEvent) {
+    if (e.target === e.currentTarget) {
+      close()
+    }
+  }
+
+  function close() {
+    setOpen(false)
+    dialogRef?.close()
+  }
+
+  function show() {
+    // TODO: use a proper lib for better focus trapping rather than relying on the browser for that
+    dialogRef?.showModal()
+    setOpen(true)
+  }
+
+  return (
+    <>
+      <div class="fixed top-2 left-2 z-10">
+        <button
+          class="flex items-center justify-center bg-primary hover:bg-primary/80 active:bg-primary size-12 rounded-full shadow-xl"
+          aria-label="Show Menu"
+          onClick={show}
+        >
+          <MenuIcon class="size-5 text-on-primary" />
+        </button>
+      </div>
+      <dialog
+        ref={dialogRef}
+        onClick={onClickOutside}
+        classList={{
+          "fixed top-0 left-0 bg-black/50 min-w-screen min-h-screen bg-black/50 z-20": open(),
+          "hidden": !open()
+        }}>
+        <div class="absolute top-2 left-2 bg-surface z-10">
+          <button
+            class="group flex items-center justify-center bg-transparent size-12 rounded-full"
+            aria-label="Close Menu"
+            onClick={close}
+          >
+            <CloseIcon class="size-6 text-on-surface-light group-hover:text-on-surface" />
+          </button>
+        </div>
+        <SideBar />
+      </dialog>
+    </>
+  )
+}
 
 export function SideBar() {
   let navigate = useNavigate()
@@ -24,7 +87,7 @@ export function SideBar() {
   })
 
   return (
-    <div class="relative h-screen min-w-xs max-w-xs bg-surface text-on-surface border-r border-on-surface/10">
+    <div class="relative min-h-screen max-w-sm bg-surface text-on-surface border-r border-on-surface/10">
       <aside class="overflow-y-auto h-full pb-16">
         <div class="flex items-center justify-center gap-6 pt-6 pb-10">
           <Logo />
@@ -39,7 +102,7 @@ export function SideBar() {
           <li >
             <button
               class={`group flex items-center gap-2 w-full h-14 border-2 border-primary-light-2 rounded-full px-4 text-on-surface-light/60
-                      hover:bg-primary-light hover:text-on-surface active:bg-primary/20`}
+                      hover:bg-primary-light hover:text-on-surface active:bg-primary-light-2`}
               onClick={showSearch}>
               <SearchIcon class="size-5 text-primary/70 group-hover:text-primary" />
               Search everywhere

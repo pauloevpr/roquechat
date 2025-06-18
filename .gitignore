@@ -1,3 +1,4 @@
 dist
+TODO.md
 .env.local
 node_modules

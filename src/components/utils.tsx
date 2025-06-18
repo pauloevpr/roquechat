@@ -42,3 +42,24 @@ export function useKeyboardListener(
     document.removeEventListener("keydown", onKeyDown)
   })
 }
+
+
+
+export function useBreakpoint() {
+  const [width, setWidth] = createSignal(window.innerWidth)
+
+  function updateWidth() {
+    setWidth(window.innerWidth)
+  }
+
+  window.addEventListener('resize', updateWidth)
+  onCleanup(() => window.removeEventListener('resize', updateWidth))
+
+  return {
+    sm: () => width() >= 640,
+    md: () => width() >= 768,
+    lg: () => width() >= 1024,
+    xl: () => width() >= 1280,
+    '2xl': () => width() >= 1536
+  }
+}

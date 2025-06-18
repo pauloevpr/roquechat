@@ -11,10 +11,11 @@ import { SelectableModel, useModelSelector } from "./models"
 import { useOpenRouterSetup } from "./openrouter";
 import { Button, IconButton } from "../components/buttons";
 import { BotMessageSquareIcon, ChevronDownIcon, CircleStopIcon, CopyIcon, PencilIcon, SplitIcon } from "../components/icons";
-import { SideBar } from "./aside";
+import { SideBar, SideBarButton } from "./aside";
 import { useOpenRouter } from "../lib/openrouter";
 import { useSearch } from "./search";
 import { useCurrentUser } from "./protected";
+import { useBreakpoint } from "../components/utils";
 
 
 export function ChatPage() {
@@ -170,12 +171,18 @@ export function ChatPage() {
       showOpenRouterSetup()
     }
   }
+  let breakpoint = useBreakpoint()
 
   return (
-    <div class="grid grid-cols-[auto_1fr]">
-      <SideBar />
+    <div class="lg:grid grid-cols-[320px_1fr]">
+      <Show when={breakpoint.lg()}>
+        <SideBar />
+      </Show>
+      <Show when={!breakpoint.lg()}>
+        <SideBarButton />
+      </Show>
       <main class="relative">
-        <div class="relative p-10 overflow-y-auto h-screen"
+        <div class="relative py-10 px-1 sm:px-10 overflow-y-auto h-screen"
           ref={refs.messages}
         >
           <div class="space-y-2 py-6 pb-36 max-w-2xl mx-auto pl-4 pr-2">
@@ -194,7 +201,7 @@ export function ChatPage() {
         <div class="absolute bottom-0 w-full bg-background">
           <Show when={trialWarning()}>
             {warning => (
-              <div class="flex items-center justify-center gap-1 flex-wrap bg-surface-2 px-2 py-2 rounded-t-2xl max-w-xl mx-auto ">
+              <div class="flex items-center justify-center gap-1 flex-wrap bg-surface-2 px-2 py-2 rounded-t-2xl w-full max-w-xl mx-auto ">
                 <p class="">
                   You have {warning().remaining} messages left.
                 </p>
@@ -388,7 +395,7 @@ function MessageItem(props: {
           <div class="flex">
             <article class="w-full"
               classList={{ "bg-surface rounded-2xl text-on-surface px-4 py-3": props.message.from === "user" }}>
-              <div class="max-w-none prose  prose-pre:p-1 prose-pre:bg-surface prose-pre:border prose-pre:rounded-none prose-pre:rounded-t-lg" innerHTML={html()} />
+              <div class="max-w-none prose prose-code:overflow-x-auto prose-pre:p-1 prose-pre:bg-surface prose-pre:border prose-pre:rounded-none prose-pre:rounded-t-lg" innerHTML={html()} />
             </article>
             <Show when={props.message.from === "user"}>
               <img

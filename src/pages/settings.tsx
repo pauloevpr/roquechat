@@ -34,8 +34,8 @@ export function SettingsPage() {
 
   return (
     <main>
-      <div class="grid grid-cols-2 gap-16 max-w-4xl mx-auto py-32 px-4">
-        <div class="max-w-xs">
+      <div class="grid grid-rows-2 gap-24 sm:grid-cols-2 sm:gap-16 max-w-4xl mx-auto py-32 px-4">
+        <div class="">
           <div class="flex justify-center pb-16">
             <Logo />
           </div>
@@ -44,7 +44,7 @@ export function SettingsPage() {
             class="block mx-auto size-24 rounded-full border-4 border-primary/20" />
           <h1 class="text-xl font-medium text-center">{user.name}</h1>
           <p class="text-on-surface-light text-center">{user.email}</p>
-          <div class="pt-8 flex-grow">
+          <div class="pt-8 flex-grow max-w-xs mx-auto">
             <Button
               label="Sign Out"
               style="neutral"
@@ -54,7 +54,7 @@ export function SettingsPage() {
             />
           </div>
         </div>
-        <div >
+        <div class="">
           <Show when={!openRouter.key}>
             <OpenRouterConnect />
           </Show>

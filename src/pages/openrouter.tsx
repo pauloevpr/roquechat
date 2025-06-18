@@ -64,7 +64,7 @@ export function OpenRouterConnect(props: { onCancel?: Function }) {
 
 
   return (
-    <div class="">
+    <div class="px-6 sm:px-0">
       <div class="flex gap-2 items-center w-full">
         <OpenRouterIcon class="size-8" />
         <span class="font-medium text-2xl">OpenRouter</span>
@@ -118,7 +118,7 @@ export function OpenRouterDisconnect() {
   }
 
   return (
-    <div class="">
+    <div class="px-6 sm:px-0">
       <div class="flex gap-2 items-center w-full">
         <OpenRouterIcon class="size-8" />
         <span class="font-medium text-2xl">OpenRouter</span>
