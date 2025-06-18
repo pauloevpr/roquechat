@@ -139,7 +139,7 @@ async function connect() {
   localStorage.setItem(StorageKeys.verifier, codeVerifier)
   const codeChallenge = await createSHA256CodeChallenge(codeVerifier);
   let redirect = new URL("https://openrouter.ai/auth")
-  let callbackUrl = "http://localhost:3010"
+  let callbackUrl = "https://roque.chat"
   redirect.searchParams.set("callback_url", callbackUrl)
   redirect.searchParams.set("code_challenge", codeChallenge)
   redirect.searchParams.set("code_challenge_method", "S256")

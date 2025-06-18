@@ -62,7 +62,6 @@ export function useOpenRouterSetup() {
 export function OpenRouterConnect(props: { onCancel?: Function }) {
   let openRouter = useOpenRouter();
 
-
   return (
     <div class="px-6 sm:px-0">
       <div class="flex gap-2 items-center w-full">
