@@ -18,6 +18,7 @@
   --color-primary: var(--color-teal-700);
   --color-primary-light: var(--color-teal-50);
   --color-primary-light-2: var(--color-teal-100);
+  --color-primary-light-3: var(--color-teal-200);
   --color-on-primary: var(--color-white);
 
   --color-button-neutral: var(--color-gray-300);

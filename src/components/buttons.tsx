@@ -52,7 +52,7 @@ function useButtonStyle(style: Accessor<ButtonStyle>) {
   const classList = createMemo(() => ({
     "bg-button-primary text-on-button-primary active:bg-button-primary/60 hover:bg-button-primary/80": style() === "primary",
     "bg-button-neutral/30 text-on-button-neutral active:bg-button-neutral/80 hover:bg-button-neutral/50": style() === "neutral",
-    "bg-button-primary/10 text-primary active:bg-button-primary/40 hover:bg-button-primary/20": style() === "primary-light",
+    "bg-primary-light-2 text-primary active:bg-primary-light-2 hover:bg-primary-light-3": style() === "primary-light",
   }))
   return {
     base: (() => base) as Accessor<string>,

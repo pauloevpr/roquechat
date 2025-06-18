@@ -23,9 +23,18 @@ export function SideBar() {
   })
 
   return (
-    <div class="relative h-screen min-w-xs max-w-xs bg-surface text-on-surface border-r-2 border-primary/20">
+    <div class="relative h-screen min-w-xs max-w-xs bg-surface text-on-surface border-r border-on-surface/10">
       <aside class="overflow-y-auto h-full pb-16 pt-10">
         <ul class="px-4 space-y-4 pb-8">
+          <li >
+            <button
+              class={`group flex items-center gap-2 w-full h-14 border-2 border-primary-light-2 rounded-full px-4 text-on-surface-light/60
+                      hover:bg-primary-light hover:text-on-surface active:bg-primary/20`}
+              onClick={showSearch}>
+              <SearchIcon class="size-5 text-primary/70 group-hover:text-primary" />
+              Search everywhere
+            </button>
+          </li>
           <li>
             <Button
               label="New Chat"
@@ -35,15 +44,6 @@ export function SideBar() {
               onClick={newChat}
               appendIcon={<SquarePenIcon class="size-4 text-primary ml-1" />}
             />
-          </li>
-          <li >
-            <button
-              class={`group flex items-center gap-2 w-full h-14 border-2 border-primary/10 rounded-full px-4 text-on-surface-light/60
-                      hover:bg-primary/5 hover:text-on-surface active:bg-primary/20`}
-              onClick={showSearch}>
-              <SearchIcon class="size-5 text-primary/70 group-hover:text-primary" />
-              Search everywhere
-            </button>
           </li>
         </ul>
         <ChatList />
@@ -87,7 +87,7 @@ function UserMenu() {
   }
 
   return (
-    <details class="z-10 absolute bottom-0 left-0 right-0 bg-surface border-t-2 border-primary/20">
+    <details class="z-10 absolute bottom-0 left-0 right-0 bg-surface border-t border-on-surface/10">
       <summary class="w-full flex items-center gap-3 px-6 py-4 ">
         <img
           alt={`${user.name}'s profile picture`}
