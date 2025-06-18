@@ -1,10 +1,24 @@
 import { Navigate, RouteSectionProps } from "@solidjs/router"
-import { createEffect, ParentProps, Show } from "solid-js"
+import { createContext, createEffect, ParentProps, Show, useContext } from "solid-js"
 import { useConvex, useQuery } from "../lib/convex/provider"
 import { api } from "../../convex/_generated/api"
 import { LiveSync, SyncStore } from "../lib/sync"
 import { OpenRouterProvider } from "../lib/openrouter"
 
+const CurrentUserContext = createContext<{
+  user: {
+    id: string
+    name: string
+    avatar: string
+  }
+}
+>()
+
+export function useCurrentUser() {
+  let currentUser = useContext(CurrentUserContext)
+  if (!currentUser) throw new Error("CurrentUserContext not found")
+  return currentUser
+}
 
 export function ProtectedWrapper(props: RouteSectionProps) {
   let { auth } = useConvex()
@@ -16,11 +30,13 @@ export function ProtectedWrapper(props: RouteSectionProps) {
     return (
       <Show when={user()} keyed>
         {user => (
-          <SyncStore.Provider namespace={user.id}>
-            <LiveSync>
-              {props.children}
-            </LiveSync>
-          </SyncStore.Provider>
+          <CurrentUserContext.Provider value={{ user }}>
+            <SyncStore.Provider namespace={user.id}>
+              <LiveSync>
+                {props.children}
+              </LiveSync>
+            </SyncStore.Provider>
+          </CurrentUserContext.Provider>
         )}
       </Show>
     )

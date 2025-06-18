@@ -1,15 +1,20 @@
 import "highlight.js/styles/github.css";
-import { createEffect, createMemo, createResource, createSignal, For, Index, onCleanup, onMount, Show, untrack, VoidProps } from "solid-js"
+import { Accessor, createEffect, createMemo, createResource, createSignal, Index, onCleanup, Show, untrack } from "solid-js"
 import { api } from "../../convex/_generated/api"
 import { Id } from "../../convex/_generated/dataModel"
-import { SyncStore, Message, Chat } from "../lib/sync"
+import { SyncStore, Message } from "../lib/sync"
 import { createStore } from "solid-js/store"
-import { useConvex } from "../lib/convex/provider"
-import { createAsync, useLocation, useSearchParams } from "@solidjs/router"
+import { useConvex, useQuery } from "../lib/convex/provider"
+import { useSearchParams } from "@solidjs/router"
 import { createMarked } from "../components/marked"
-import { SelectableModel, useModelSelector } from "./models"
+import { SelectableModel, useModelSelector, useOpenRouterSetup } from "./models"
+import { Button, IconButton } from "../components/buttons";
+import { ChevronDownIcon, CircleStopIcon, CopyIcon, PencilIcon, SplitIcon } from "../components/icons";
+import { SideBar } from "./aside";
+import { useOpenRouter } from "../lib/openrouter";
 import { useSearch } from "./search";
-import { useKeyboardListener } from "../components/utils";
+import { useCurrentUser } from "./protected";
+
 
 export function ChatPage() {
   let { convex } = useConvex()
@@ -18,10 +23,15 @@ export function ChatPage() {
   let [chatId, setChatId] = useCurrentChatId()
   let [streamingMessageId, setStreamingMessageId] = createSignal<Id<"records"> | undefined>(undefined)
   let streaming = createMemo(() => !!streamingMessageId())
-  let [selectedModel, SelectModelButton] = useModelSelector()
+  let { selectedModel } = useModelSelector()
+  let { showOpenRouterSetup, OpenRouterSetupDialog } = useOpenRouterSetup()
+  let { showSearch, SearchDialog } = useSearch("models")
+  let openRouter = useOpenRouter()
+
   let refs = {
     messages: undefined as undefined | HTMLDivElement,
-    input: undefined as undefined | HTMLTextAreaElement
+    input: undefined as undefined | HTMLTextAreaElement,
+    send: undefined as undefined | HTMLButtonElement,
   }
 
   createEffect((previousChat: Id<"records"> | undefined) => {
@@ -40,13 +50,22 @@ export function ChatPage() {
       if (chatChanged) {
         setStreamingMessageId(undefined)
         scrollToBottom()
+        requestAnimationFrame(() => {
+          refs.input?.focus()
+        })
       }
     })
     return chatId()
   })
 
   function scrollToBottom() {
-    refs.messages?.scrollTo({ top: refs.messages.scrollHeight, behavior: "instant" })
+    // HACK: investigate why this does not work without a delay;  
+    // solid's rendering is synchronous, so the render should all be done by the time we try to scroll to the bottom, but for some reason the rendering is not done
+    setTimeout(() => {
+      if (refs.messages) {
+        refs.messages.scrollTop = refs.messages.scrollHeight
+      }
+    }, 20)
   }
 
   async function sendMessage(e: SubmitEvent) {
@@ -55,7 +74,10 @@ export function ChatPage() {
     const formData = new FormData(form)
     const content = (formData.get('message') as string).trim()
     form.reset()
-    refs.input?.focus()
+    if (refs.input) {
+      refs.input.focus()
+      refs.input.style.height = 'auto';
+    }
     if (!content) return
     let model = selectedModel()
     if (!model) {
@@ -106,22 +128,43 @@ export function ChatPage() {
     }
   }
 
-  function cancelResponse() {
+  async function cancelResponse() {
     let messageId = streamingMessageId()
     if (!messageId) return
-    convex.mutation(api.functions.cancelResponse, { messageId: messageId })
+    await convex.mutation(api.functions.cancelResponse, { messageId: messageId })
+  }
+
+  let inputHandlers = {
+    onInput: (e: InputEvent) => {
+      const textarea = e.currentTarget as HTMLTextAreaElement;
+      textarea.style.height = 'auto';
+      const newHeight = Math.min(textarea.scrollHeight, 200);
+      textarea.style.height = `${newHeight}px`;
+    },
+    onKeyDown: (e: KeyboardEvent) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        refs.send?.click();
+      }
+    }
+  }
+
+  function onStartModelSelection() {
+    if (openRouter.key) {
+      showSearch()
+    } else {
+      showOpenRouterSetup()
+    }
   }
 
   return (
     <div class="grid grid-cols-[auto_1fr]">
-      <ChatList />
-      <main
-        class="relative"
-      >
+      <SideBar />
+      <main class="relative">
         <div class="relative p-10 overflow-y-auto h-screen"
           ref={refs.messages}
         >
-          <div class="space-y-4 py-6 pb-20">
+          <div class="space-y-2 py-6 pb-32 max-w-2xl mx-auto pl-4 pr-2">
             <Index each={messages}>
               {(message) => (
                 <MessageItem
@@ -134,150 +177,62 @@ export function ChatPage() {
             </Index >
           </div >
         </div>
-        <div class="absolute bottom-0 left-0 right-0 bg-blue-100">
-          <form onSubmit={sendMessage}
-            class="flex gap-2">
-            <textarea
-              class="border-2 border-gray-300 rounded-md p-2 flex-grow"
-              name="message"
-              classList={{ "bg-gray-200": streaming() }}
-              required
-              ref={refs.input} />
-            <div>
-              <Show when={!streaming()}>
-                <button
-                  class="bg-blue-500"
-                  type="submit"
-                  disabled={streaming()}
-                >Send</button>
-              </Show>
-              <Show when={streaming()}>
-                <button class="bg-red-500" type="button" onClick={cancelResponse}>Cancel</button>
-              </Show>
+        <div class="absolute bottom-0 w-full bg-background">
+          <div class="bg-surface text-on-surface border border-on-surface/10 rounded-t-2xl max-w-2xl mx-auto">
+            <div class="pb-2">
+              <form
+                id="chat-input"
+                onSubmit={sendMessage}
+              >
+                <textarea
+                  class="px-4 pt-5 w-full rounded-t-2xl outline-none resize-none overflow-y-auto min-h-[40px] max-h-[200px]"
+                  name="message"
+                  required
+                  placeholder="Your message"
+                  ref={refs.input}
+                  {...inputHandlers}
+                />
+              </form>
+              <div class="flex items-end px-2">
+                <div class="flex-grow">
+                  <Button
+                    label={selectedModel()?.name || "Select Model"}
+                    style="neutral"
+                    onClick={onStartModelSelection}
+                    type="button"
+                    appendIcon={<ChevronDownIcon />}
+                  />
+                </div>
+                <Show when={!streaming()}>
+                  <Button
+                    ref={refs.send}
+                    label="Send"
+                    style="primary"
+                    type="submit"
+                    form="chat-input"
+                    disabled={streaming()}
+                  />
+                </Show>
+                <Show when={streaming()}>
+                  <Button
+                    label="Stop"
+                    style="neutral"
+                    type="button"
+                    onClick={cancelResponse}
+                    icon={<CircleStopIcon class="size-6 text-primary/50" />}
+                  />
+                </Show>
+              </div>
             </div>
-          </form>
-          <SelectModelButton />
+          </div>
         </div>
       </main >
-    </div>
-  )
-}
-
-
-function ChatList() {
-  let { auth } = useConvex()
-  let store = SyncStore.use()
-  let [chatId] = useCurrentChatId()
-
-  let chats = createAsync(async () => {
-    let chats = await store.chats.all()
-    chats.sort((a, b) => b.lastMessageAt - a.lastMessageAt)
-    return chats
-  })
-
-  let { showSearch, SearchDialog } = useSearch()
-
-  useKeyboardListener("ctrl", "k", () => {
-    showSearch()
-  })
-
-  function signOut() {
-    auth.signOut()
-  }
-
-  return (
-    <aside class="overflow-y-auto h-screen p-6 border">
-      <ul class="space-y-2">
-        <li>
-          <a href="/">New Chat</a>
-        </li>
-        <button class="border" onClick={showSearch}>Search</button>
-        <For each={chats()}>
-          {(chat) => (
-            <ChatListItem
-              chat={chat}
-              selected={chatId() === chat.id}
-            />
-          )}
-        </For>
-      </ul>
-
-      <button
-        class="bg-gray-100 p-2 rounded-md mt-4"
-        onClick={signOut}
-      >
-        Sign Out
-      </button>
       <SearchDialog />
-    </aside>
+      <OpenRouterSetupDialog />
+    </div >
   )
 }
 
-function ChatListItem(props: VoidProps<{
-  chat: Chat,
-  selected: boolean,
-}>) {
-  let store = SyncStore.use()
-  let [editing, setEditing] = createSignal(false)
-  let [chatId, setChatId] = useCurrentChatId()
-
-  async function onEditSubmit(e: SubmitEvent) {
-    e.preventDefault()
-    let form = e.target as HTMLFormElement
-    let title = form.querySelector("input")?.value || ""
-    if (title) {
-      await store.chats.set(props.chat.id, {
-        ...props.chat,
-        title: title,
-      })
-    }
-    setEditing(false)
-  }
-
-  function startEditing(e: MouseEvent) {
-    e.preventDefault()
-    e.stopPropagation()
-    setEditing(true)
-  }
-
-  async function deleteChat() {
-    let confirmed = confirm("Are you sure you want to delete this chat and its messages?")
-    if (!confirmed) return
-    let messages = (await store.messages.all()).filter(x => x.chatId === props.chat.id)
-    await store.chats.delete(props.chat.id)
-    await store.chats.delete(...messages.map(x => x.id))
-    if (chatId() === props.chat.id) {
-      setChatId(undefined)
-    }
-  }
-
-  return (
-    <li>
-      <Show when={editing()}>
-        <form onSubmit={onEditSubmit}>
-          <input autofocus type="text" value={props.chat.title} name="title" required />
-        </form>
-      </Show>
-      <Show when={!editing()}>
-        <a
-          classList={{
-            "font-semibold": props.selected,
-            "animate-pulse": !props.chat.title
-          }}
-          class="group whitespace-nowrap text-ellipsis"
-          href={`/?chatId=${props.chat.id}`}>
-          {props.chat.title || "..."}
-          <button
-            class="invisible group-hover:visible border"
-            onClick={startEditing}>Edit</button>
-          <button
-            class="invisible group-hover:visible border"
-            onClick={deleteChat}>Delete</button>
-        </a>
-      </Show>
-    </li>
-  )
-}
 
 function MessageItem(props: {
   message: Message,
@@ -285,6 +240,7 @@ function MessageItem(props: {
   onEdited: (messageId: string) => void,
   onStreaming: (status: "started" | "finished") => void,
 }) {
+  let { user } = useCurrentUser()
   let unsubscribe: Function | undefined = undefined
   let marked = createMarked()
   let { convex } = useConvex()
@@ -295,6 +251,10 @@ function MessageItem(props: {
     return marked.parse(content)
   })
   let canEdit = createMemo(() => props.message.from === "user")
+  let refs = {
+    input: undefined as undefined | HTMLTextAreaElement,
+    send: undefined as undefined | HTMLButtonElement,
+  }
 
   createEffect(() => {
     setContent(props.message.content)
@@ -363,34 +323,106 @@ function MessageItem(props: {
     setChatId(newChatId)
   }
 
+  function enableEditing() {
+    setEditing(true)
+    refs.input?.focus()
+  }
+
+
+  let inputHandlers = {
+    onInput: (e: InputEvent) => {
+      const textarea = e.currentTarget as HTMLTextAreaElement;
+      textarea.style.height = 'auto';
+      const newHeight = Math.min(textarea.scrollHeight, 200);
+      textarea.style.height = `${newHeight}px`;
+    },
+    onKeyDown: (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setEditing(false)
+      }
+    }
+  }
+
+  function CopyButton() {
+    // TODO: add animation
+    return (
+      <IconButton
+        icon={CopyIcon}
+        label="Copy Message"
+        onClick={copyToClipboard}
+      />
+    )
+  }
+
   return (
     <div id={props.message.id}>
       <Show when={!editing()}>
-        <article class=" border-2 border-gray-300 rounded-md p-2">
-          <div class="prose" innerHTML={html()} />
-        </article>
-        <Show when={canEdit()}>
-          <button class="border" onClick={() => setEditing(true)}>Edit</button>
-        </Show>
-        <button class="border" onClick={copyToClipboard}>Copy</button>
-        <Show when={props.message.from === "assistant"}>
-          <button class="border"
-            onClick={branchOff}>Branch off</button>
-        </Show>
+        <div class="group relative">
+          <div class="flex">
+            <article class="w-full"
+              classList={{ "bg-surface rounded-2xl text-on-surface px-4 py-3": props.message.from === "user" }}>
+              <div class="max-w-none prose  prose-pre:p-1 prose-pre:bg-surface prose-pre:border prose-pre:rounded-none prose-pre:rounded-t-lg" innerHTML={html()} />
+            </article>
+            <Show when={props.message.from === "user"}>
+              <img
+                alt={`${user.name}'s profile picture`}
+                src={user.avatar}
+                class={`size-6 rounded-full border-2 border-primary/20 mt-2 ml-2`}
+              />
+            </Show>
+          </div>
+          <Show when={props.message.from === "user"}>
+            <div class="relative">
+              <div class=" flex flex-row-reverse flex invisible group-hover:visible pl-2 pr-6 pt-1 ">
+                <Show when={canEdit()}>
+                  <IconButton
+                    icon={PencilIcon}
+                    label="Edit Message"
+                    onClick={enableEditing}
+                  />
+                </Show>
+                <CopyButton />
+              </div>
+            </div>
+          </Show>
+          <Show when={props.message.from === "assistant" && !props.message.streamId}>
+            <div class="flex flex opacity-20 group-hover:opacity-100 -ml-2">
+              <CopyButton />
+              <IconButton
+                icon={SplitIcon}
+                label="Branch off as new chat"
+                onClick={branchOff}
+              />
+            </div>
+          </Show>
+        </div>
       </Show>
       <Show when={editing()}>
-        <form action="" onSubmit={onEditSubmit}>
+        <form
+          class="bg-surface text-on-surface border border-on-surface/10 rounded-2xl p-4"
+          onSubmit={onEditSubmit}>
           <textarea
+            ref={refs.input}
             name="content"
             required
-            class="border-2 border-gray-300 rounded-md p-2 w-full"
+            class="w-full outline-none resize-none overflow-y-auto min-h-[40px] max-h-[200px] "
             value={content()}
+            {...inputHandlers}
           />
-          <button class="bg-green-500"
-            type="submit">Save</button>
-          <button class="border" onClick={() => setEditing(false)}
-            type="button"
-          >Cancel</button>
+          <div class="flex gap-2">
+            <Button
+              ref={refs.send}
+              label="Save"
+              style="primary"
+              type="submit"
+            />
+            <Button
+              label="Cancel"
+              style="neutral"
+              onClick={() => setEditing(false)}
+              type="button"
+            />
+          </div>
         </form>
       </Show>
     </div>
@@ -398,7 +430,7 @@ function MessageItem(props: {
 }
 
 
-function useCurrentChatId() {
+export function useCurrentChatId() {
   let [searchParams, setSearchParams] = useSearchParams()
   let chatId = createMemo(() => searchParams.chatId as Id<"records"> | undefined)
   function setChatId(id?: string) {

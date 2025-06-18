@@ -1,14 +1,10 @@
 import { OpenAI } from "openai";
 import { GoogleGenAI } from "@google/genai";
 
-
-export const supportedModels = {
-  google: {
-    "gemini-2.0-flash": "Google Gemini 2.0 Flash",
-  },
-  openai: {
-    "gpt-4.1-mini": "OpenAI GPT-4.1 Mini",
-  }
+export const trialModel = {
+  provider: "trial",
+  id: "gemini-2.0-flash",
+  name: "Google Gemini 2.0 Flash"
 }
 
 export interface LLM {
@@ -21,10 +17,17 @@ export const ai = {
     model: { id: string, apiKey: string, provider?: string },
     options: { signal: AbortSignal }
   ): LLM {
-    if (model.provider === "openrouter") return openrouter(model.id, model.apiKey, options?.signal)
-    if (model.id in supportedModels.google) return google(model.id, model.apiKey, options?.signal)
-    if (model.id in supportedModels.openai) return openai(model.id, model.apiKey, options?.signal)
-    throw new Error(`Model ${model.id} not supported`)
+    if (model.provider === "openrouter") {
+      return openrouter(model.id, model.apiKey, options?.signal)
+    }
+    if (model.provider === trialModel.provider && model.id === trialModel.id) {
+      let apiKey = process.env.GEMINI_API_KEY ?? ""
+      if (!apiKey) {
+        console.error("Using trial model will fail. GEMINI_API_KEY not set.")
+      }
+      return google(model.id, apiKey, options?.signal)
+    }
+    throw new Error(`Model ${model.id} (${model.provider}) not supported`)
   }
 }
 

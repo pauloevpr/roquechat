@@ -5,7 +5,7 @@ import { v } from "convex/values";
 import { ChatSchema, Message, RecordBase, MessageSchema, RecordType, RecordWithChatData, RecordWithMessageData } from "./schema";
 import { GenericMutationCtx, GenericQueryCtx } from "convex/server";
 import { getAuthUserId } from "@convex-dev/auth/server";
-import { ai, supportedModels } from "./llm";
+import { ai, trialModel } from "./llm";
 
 
 export const branchOff = mutation({
@@ -145,18 +145,12 @@ export const editMessage = mutation({
   }
 })
 
-export const getModels = query({
+export const getTrialModel = query({
   args: {},
   handler: async (ctx) => {
     await getRequiredUserId(ctx);
-    let result: { provider: string, id: string, name: string }[] = []
-    for (let provider of Object.keys(supportedModels)) {
-      for (let id of Object.keys((supportedModels as any)[provider])) {
-        let name = (supportedModels as any)[provider][id]
-        result.push({ provider, id, name })
-      }
-    }
-    return result
+    // TODO: consider moving this to the database
+    return trialModel
   }
 })
 
@@ -178,6 +172,7 @@ export const getCurrentUser = query({
     return {
       id: userId,
       name: user?.name || "",
+      avatar: user?.image || "",
     }
   }
 })

@@ -9,7 +9,6 @@ export const RecordIdSchema = v.id("records")
 export const RecordTypeSchema = v.union(
   v.literal("chats"),
   v.literal("messages"),
-  v.literal("modelConfigs")
 )
 
 export const ChatSchema = v.object({

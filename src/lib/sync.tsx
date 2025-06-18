@@ -11,7 +11,6 @@ import { convex } from './convex/client';
 type LocalRecord = { id: string, updatedAt: number, createdAt: number }
 export type Chat = ChatSchema & LocalRecord
 export type Message = MessageSchema & LocalRecord
-export type ModelConfig = { provider: string, apiKey: string } & LocalRecord
 
 
 export const SyncStore = createWireStore({
@@ -19,12 +18,10 @@ export const SyncStore = createWireStore({
   definition: {
     chats: {} as Chat,
     messages: {} as Message,
-    modelConfigs: {} as ModelConfig,
   },
   sync: async ({ records, namespace, syncCursor }) => {
     let request: any = {}
     for (let record of records) {
-      if (record.type === "modelConfigs") continue  // we dont want to send model configs to the server because they contain api keys
       if (!request[record.type]) {
         request[record.type] = []
       }

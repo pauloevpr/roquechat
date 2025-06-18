@@ -16,8 +16,6 @@ Core
 - [ ] Mobile App
 
 GUI
-- [ ] Basic styling
-- [ ] Group chats by date
 - [ ] Copy code block
 - [ ] Pin thread
 - [ ] Dark mode support
@@ -35,6 +33,8 @@ Extra
 - [ ] Select codeblock color theme
 
 Bugs
+- search: UI does not scroll to the bottom as the selected item is moved down off the visible UI
+- messages from the user not coming out (or maybe displaying) as multiline 
 - scrolling to the bottom when switching chats is not working sometimes
 - using a reasoning model will produce large conversation title because
 - reasoning content is dislayed as part of the chat response
