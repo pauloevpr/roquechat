@@ -6,9 +6,10 @@ import { createAsync, useNavigate } from "@solidjs/router"
 import { useSearch } from "./search";
 import { useKeyboardListener } from "../components/utils";
 import { Button, IconButton } from "../components/buttons";
-import { ChevronDownIcon, ChevronRightIcon, CircleStopIcon, CopyIcon, LogoutIcon, PencilIcon, SearchIcon, SplitIcon, SquarePenIcon, TrashIcon } from "../components/icons";
+import { ChevronDownIcon, ChevronRightIcon, CircleStopIcon, CopyIcon, GithubIcon, LogoutIcon, PencilIcon, SearchIcon, SplitIcon, SquarePenIcon, TrashIcon } from "../components/icons";
 import { useCurrentChatId } from "./chat";
 import { useCurrentUser } from "./protected";
+import { Logo } from "../components/logo"
 
 export function SideBar() {
   let navigate = useNavigate()
@@ -24,7 +25,16 @@ export function SideBar() {
 
   return (
     <div class="relative h-screen min-w-xs max-w-xs bg-surface text-on-surface border-r border-on-surface/10">
-      <aside class="overflow-y-auto h-full pb-16 pt-10">
+      <aside class="overflow-y-auto h-full pb-16">
+        <div class="flex items-center justify-center gap-6 pt-6 pb-10">
+          <Logo />
+          <a href="https://github.com/pauloevpr/roquechat"
+            aria-label="Link to Github repository"
+            class="size-5"
+            target="_blank">
+            <GithubIcon />
+          </a>
+        </div>
         <ul class="px-4 space-y-4 pb-8">
           <li >
             <button
