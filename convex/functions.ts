@@ -8,6 +8,7 @@ import { getAuthUserId } from "@convex-dev/auth/server";
 import { ai, trialModel } from "./llm";
 
 const TRIAL_LIMIT = process.env.TRIAL_LIMIT ? parseInt(process.env.TRIAL_LIMIT) : 10
+const CHAT_TITLE_LENGTH_LIMIT = process.env.CHAT_TITLE_LENGTH_LIMIT ? parseInt(process.env.CHAT_TITLE_LENGTH_LIMIT) : 90
 
 export const getTrialStatus = query({
   args: {},
@@ -398,6 +399,10 @@ export const startStream = internalAction({
           ],
         )
         if (newTitle) {
+          if (newTitle.length > CHAT_TITLE_LENGTH_LIMIT) {
+            console.warn(`Chat title is too long (${newTitle.length} characters). Cropping to ${CHAT_TITLE_LENGTH_LIMIT} characters.`)
+            newTitle = newTitle.slice(0, CHAT_TITLE_LENGTH_LIMIT)
+          }
           await ctx.runMutation(internal.functions.updateChatTitle, {
             chatId,
             title: newTitle,
@@ -546,7 +551,6 @@ async function computeAndCheckTrial(ctx: GenericMutationCtx<DataModel>, userId: 
     })
   }
 }
-
 
 const validate = {
   chat: (chat: RecordBase | null, userId: Id<"users">) => {
