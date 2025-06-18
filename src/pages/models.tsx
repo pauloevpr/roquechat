@@ -1,4 +1,4 @@
-import { createEffect, createMemo, createSignal, For, Show } from "solid-js"
+import { createEffect, createMemo, createSignal, For, Show, untrack } from "solid-js"
 import { api } from "../../convex/_generated/api"
 import { SyncStore } from "../lib/sync"
 import { useQuery } from "../lib/convex/provider"
@@ -48,6 +48,15 @@ export function useModelSelector() {
     let model = allModels()?.find(m => m.id === modelId)
     if (!model?.apiKey) return
     return model
+  })
+
+  createEffect(() => {
+    let trial = trialModel()
+    if (trial && !selectedModelId()) {
+      untrack(() => {
+        setSelectedModelId(trial.id)
+      })
+    }
   })
 
   function select(model: SelectableModel) {

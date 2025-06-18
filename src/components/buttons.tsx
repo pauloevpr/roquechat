@@ -48,7 +48,7 @@ export function IconButton(props: ParentProps<{
 
 function useButtonStyle(style: Accessor<ButtonStyle>) {
   const base = `flex items-center justify-center gap-2 h-10 transition-colors font-semibold px-4 rounded-full whitespace-nowrap
-                data-[full-width]:w-full data-[large]:h-12 data-[large]:text-lg data-[large]:px-6`
+                data-[full-width]:w-full data-[large]:h-12 data-[large]:text-lg data-[large]:px-6 data-[large]:h-12`
   const classList = createMemo(() => ({
     "bg-button-primary text-on-button-primary active:bg-button-primary/60 hover:bg-button-primary/80": style() === "primary",
     "bg-button-neutral/30 text-on-button-neutral active:bg-button-neutral/80 hover:bg-button-neutral/50": style() === "neutral",

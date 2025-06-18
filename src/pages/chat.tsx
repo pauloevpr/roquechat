@@ -193,7 +193,7 @@ export function ChatPage() {
                   {...inputHandlers}
                 />
               </form>
-              <div class="flex items-end px-2">
+              <div class="flex items-end px-4">
                 <div class="flex-grow">
                   <Button
                     label={selectedModel()?.name || "Select Model"}

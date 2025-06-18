@@ -16,6 +16,7 @@ Core
 - [ ] Mobile App
 
 GUI
+- Style Sign In page
 - [ ] Copy code block
 - [ ] Pin thread
 - [ ] Dark mode support
