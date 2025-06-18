@@ -10,6 +10,7 @@ const CurrentUserContext = createContext<{
     id: string
     name: string
     avatar: string
+    email: string
   }
 }
 >()

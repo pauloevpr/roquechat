@@ -6,6 +6,7 @@ import { LoginPage } from './pages/login';
 import { ConvexProvider } from './lib/convex/provider';
 import { convex } from './lib/convex/client';
 import { OpenRouterProvider } from './lib/openrouter';
+import { SettingsPage } from './pages/settings';
 
 
 const App: Component = () => {
@@ -15,6 +16,7 @@ const App: Component = () => {
         <Router>
           <Route path="/" component={ProtectedWrapper} >
             <Route path="/" component={ChatPage} />
+            <Route path="/settings" component={SettingsPage} />
           </Route>
           <Route path="/login" component={LoginPage} />
         </Router>

@@ -7,7 +7,7 @@
   --color-surface: var(--color-white);
   --color-on-surface-strong: black;
   --color-on-surface: hsla(240, 1%, 15%, 1);
-  --color-on-surface-light: hsla(240, 1%, 26%, 0.73);
+  --color-on-surface-light: hsla(240, 1%, 26%, 0.77);
 
   --color-surface-2: var(--color-gray-200);
 

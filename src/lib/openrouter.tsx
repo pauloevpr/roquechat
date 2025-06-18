@@ -1,6 +1,7 @@
 import { createContext, createEffect, createSignal, onMount, ParentProps, Show, useContext } from "solid-js";
 import { createStore } from "solid-js/store";
 import { createWireStore, localOnly } from "../solid-wire";
+import { setSelectedModelId } from "../pages/models";
 
 
 const StorageKeys = {
@@ -102,6 +103,7 @@ function OpenRouterProviderInternal(props: ParentProps) {
       if (typeof key !== "string") throw Error(`Invalid key received from the server. Expected string, got ${typeof key}`)
       setState("key", key)
       localStorage.setItem(StorageKeys.key, key)
+      setSelectedModelId("google/gemini-2.0-flash-001")
     } catch (error) {
       console.error("openrouter: Error getting key: ", error)
     } finally {

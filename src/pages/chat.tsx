@@ -7,7 +7,8 @@ import { createStore } from "solid-js/store"
 import { useConvex, useQuery } from "../lib/convex/provider"
 import { useSearchParams } from "@solidjs/router"
 import { createMarked } from "../components/marked"
-import { SelectableModel, useModelSelector, useOpenRouterSetup } from "./models"
+import { SelectableModel, useModelSelector } from "./models"
+import { useOpenRouterSetup } from "./openrouter";
 import { Button, IconButton } from "../components/buttons";
 import { BotMessageSquareIcon, ChevronDownIcon, CircleStopIcon, CopyIcon, PencilIcon, SplitIcon } from "../components/icons";
 import { SideBar } from "./aside";
@@ -31,7 +32,7 @@ export function ChatPage() {
   let [showTrialWarning, setShowTrialWarning] = createSignal(false)
   let trialWarning = createMemo(() => {
     let status = trialStatus()
-    if (status && showTrialWarning() && !openRouter.key) {
+    if (status && (showTrialWarning() || status.remaining <= 0) && !openRouter.key) {
       return {
         expired: status.remaining <= 0,
         remaining: status.remaining
@@ -199,7 +200,7 @@ export function ChatPage() {
                 </p>
                 <span>
                   <button onClick={showOpenRouterSetup} class="text-primary font-medium hover:underline">Connect OpenRouter</button>
-                  {` `}to unlock more messages.
+                  {` `}to unlock more.
                 </span>
               </div>
             )}
@@ -226,7 +227,6 @@ export function ChatPage() {
                     style="neutral"
                     onClick={onStartModelSelection}
                     type="button"
-                    icon={<BotMessageSquareIcon class="size-5 text-primary" />}
                     appendIcon={<ChevronDownIcon />}
                   />
                 </div>

@@ -189,6 +189,7 @@ export const getCurrentUser = query({
       id: userId,
       name: user?.name || "",
       avatar: user?.image || "",
+      email: user?.email || "",
     }
   }
 })

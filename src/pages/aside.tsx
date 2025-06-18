@@ -92,13 +92,10 @@ function UserMenu() {
   let { auth } = useConvex()
   let { user } = useCurrentUser()
 
-  function signOut() {
-    auth.signOut()
-  }
-
   return (
-    <details class="z-10 absolute bottom-0 left-0 right-0 bg-surface border-t border-on-surface/10">
-      <summary class="w-full flex items-center gap-3 px-6 py-4 ">
+    <div class="z-10 absolute bottom-0 left-0 right-0 bg-surface border-t border-on-surface/10">
+      <a href="/settings"
+        class="w-full flex items-center gap-3 px-6 py-4 ">
         <img
           alt={`${user.name}'s profile picture`}
           src={user.avatar}
@@ -108,18 +105,8 @@ function UserMenu() {
           <p class="font-medium">{user.name}</p>
         </div>
         <ChevronRightIcon class="size-6 text-on-surface-light [details[open]_&]:rotate-90 transition-transform" />
-      </summary>
-      <ul class="px-6 pb-4 pt-2">
-        <li>
-          <Button
-            label="Sign Out"
-            style="neutral"
-            onClick={signOut}
-            appendIcon={<LogoutIcon class="size-4 text-primary" />}
-          />
-        </li>
-      </ul>
-    </details>
+      </a>
+    </div>
   )
 }
 
