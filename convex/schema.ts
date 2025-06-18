@@ -38,12 +38,19 @@ export const RecordSchema = v.object({
   userId: v.id("users"),
 })
 
+export const TrialMessagesSchema = v.object({
+  count: v.number(),
+  userId: v.id("users"),
+})
+
 export default defineSchema({
   ...authTables,
   records: defineTable(RecordSchema)
     .index("by_userId_updatedAt", ["userId", "updatedAt"])
     .index("by_chatId_deleted", ["data.chatId", "deleted"]),
   streams: defineTable(StreamSchema)
+    .index("by_userId", ["userId"]),
+  trial: defineTable(TrialMessagesSchema)
     .index("by_userId", ["userId"]),
 })
 

@@ -7,6 +7,18 @@ import { GenericMutationCtx, GenericQueryCtx } from "convex/server";
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { ai, trialModel } from "./llm";
 
+const TRIAL_LIMIT = process.env.TRIAL_LIMIT ? parseInt(process.env.TRIAL_LIMIT) : 10
+
+export const getTrialStatus = query({
+  args: {},
+  handler: async (ctx) => {
+    let userId = await getRequiredUserId(ctx)
+    let trial = await ctx.db.query("trial").withIndex("by_userId", (q) => q.eq("userId", userId)).unique()
+    return {
+      remaining: trial ? TRIAL_LIMIT - trial.count : TRIAL_LIMIT,
+    }
+  }
+})
 
 export const branchOff = mutation({
   args: {
@@ -84,6 +96,9 @@ export const editMessage = mutation({
   },
   handler: async (ctx, { messageId, content, model }) => {
     let userId = await getRequiredUserId(ctx)
+    if (model.provider === "trial") {
+      await computeAndCheckTrial(ctx, userId)
+    }
     let messageRecord = await ctx.db.get(messageId)
     let message = validate.message(messageRecord, userId, "user")
     let chatRecord = await ctx.db.get((message.data as Message).chatId)
@@ -247,6 +262,9 @@ export const sendMessage = mutation({
   },
   handler: async (ctx, { message, chatId, model }) => {
     let userId = await getRequiredUserId(ctx)
+    if (model.provider === "trial") {
+      await computeAndCheckTrial(ctx, userId)
+    }
     let now = Date.now()
     let chatTitle = ""
     if (chatId) {
@@ -513,6 +531,21 @@ export const updateChatTitle = internalMutation({
     })
   }
 })
+
+async function computeAndCheckTrial(ctx: GenericMutationCtx<DataModel>, userId: Id<"users">) {
+  let trial = await ctx.db.query("trial").withIndex("by_userId", (q) => q.eq("userId", userId)).unique()
+  if (trial && trial.count >= TRIAL_LIMIT) throw new Error("Trial expired")
+  if (trial) {
+    await ctx.db.patch(trial._id, {
+      count: trial.count + 1
+    })
+  } else {
+    await ctx.db.insert("trial", {
+      count: 1,
+      userId
+    })
+  }
+}
 
 
 const validate = {

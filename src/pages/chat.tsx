@@ -27,6 +27,17 @@ export function ChatPage() {
   let { showOpenRouterSetup, OpenRouterSetupDialog } = useOpenRouterSetup()
   let { showSearch, SearchDialog } = useSearch("models")
   let openRouter = useOpenRouter()
+  let trialStatus = useQuery(api.functions.getTrialStatus, {})
+  let [showTrialWarning, setShowTrialWarning] = createSignal(false)
+  let trialWarning = createMemo(() => {
+    let status = trialStatus()
+    if (status && showTrialWarning() && !openRouter.key) {
+      return {
+        expired: status.remaining <= 0,
+        remaining: status.remaining
+      }
+    }
+  })
 
   let refs = {
     messages: undefined as undefined | HTMLDivElement,
@@ -112,6 +123,8 @@ export function ChatPage() {
     if (!chatId()) {
       setChatId(result.chatId)
     }
+
+    setShowTrialWarning(true)
   }
 
   function onMessageEdited(messageId: string) {
@@ -164,7 +177,7 @@ export function ChatPage() {
         <div class="relative p-10 overflow-y-auto h-screen"
           ref={refs.messages}
         >
-          <div class="space-y-2 py-6 pb-32 max-w-2xl mx-auto pl-4 pr-2">
+          <div class="space-y-2 py-6 pb-36 max-w-2xl mx-auto pl-4 pr-2">
             <Index each={messages}>
               {(message) => (
                 <MessageItem
@@ -178,6 +191,19 @@ export function ChatPage() {
           </div >
         </div>
         <div class="absolute bottom-0 w-full bg-background">
+          <Show when={trialWarning()}>
+            {warning => (
+              <div class="flex items-center justify-center gap-1 flex-wrap bg-surface-2 px-2 py-2 rounded-t-2xl max-w-xl mx-auto ">
+                <p class="">
+                  You have {warning().remaining} messages left.
+                </p>
+                <span>
+                  <button onClick={showOpenRouterSetup} class="text-primary font-medium hover:underline">Connect OpenRouter</button>
+                  {` `}to unlock more messages.
+                </span>
+              </div>
+            )}
+          </Show>
           <div class="bg-surface text-on-surface border border-on-surface/10 rounded-t-2xl max-w-2xl mx-auto">
             <div class="pb-2">
               <form
