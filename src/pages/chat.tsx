@@ -9,7 +9,7 @@ import { useSearchParams } from "@solidjs/router"
 import { createMarked } from "../components/marked"
 import { SelectableModel, useModelSelector, useOpenRouterSetup } from "./models"
 import { Button, IconButton } from "../components/buttons";
-import { ChevronDownIcon, CircleStopIcon, CopyIcon, PencilIcon, SplitIcon } from "../components/icons";
+import { BotMessageSquareIcon, ChevronDownIcon, CircleStopIcon, CopyIcon, PencilIcon, SplitIcon } from "../components/icons";
 import { SideBar } from "./aside";
 import { useOpenRouter } from "../lib/openrouter";
 import { useSearch } from "./search";
@@ -226,6 +226,7 @@ export function ChatPage() {
                     style="neutral"
                     onClick={onStartModelSelection}
                     type="button"
+                    icon={<BotMessageSquareIcon class="size-5 text-primary" />}
                     appendIcon={<ChevronDownIcon />}
                   />
                 </div>

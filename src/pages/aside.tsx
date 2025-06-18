@@ -164,7 +164,7 @@ function ChatListItem(props: VoidProps<{
     <div class="relative">
       <article class={`group flex items-center relative px-5 h-10 hover:bg-primary-light`}
         classList={{
-          "bg-linear-to-r from-primary-light-2 via-primary-light to-primary-light": props.selected,
+          "bg-primary-light": props.selected,
         }}>
         <header class="sr-only">{props.chat.title}</header>
         <div class="absolute left-0 top-0 w-1 h-full bg-transparent rounded-r-xl py-2"

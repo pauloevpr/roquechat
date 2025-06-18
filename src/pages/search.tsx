@@ -45,7 +45,7 @@ export function useSearch(scope: "all" | "chats" | "models") {
         }}
         onClick={onClickOutside}>
         <Show when={everOpened()}>
-          <div class="w-full max-w-xl pt-16">
+          <div class="w-full max-w-xl pt-16" onClick={onClickOutside}>
             <SearchBox open={open()} onClose={close} scope={scope} />
           </div>
         </Show>
