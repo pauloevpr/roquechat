@@ -86,6 +86,10 @@ export function SideBar() {
     showSearch()
   })
 
+  useKeyboardListener("ctrl", "o", () => {
+    newChat()
+  })
+
   return (
     <div class="relative min-h-screen max-w-sm bg-surface text-on-surface border-r border-on-surface/10">
       <aside class="overflow-y-auto h-full pb-16">

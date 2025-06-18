@@ -185,6 +185,9 @@ export function ChatPage() {
         <div class="relative py-10 px-1 sm:px-10 overflow-y-auto h-screen"
           ref={refs.messages}
         >
+          <Show when={!chatId()}>
+            <Welcome />
+          </Show>
           <div class="space-y-2 py-6 pb-36 max-w-2xl mx-auto pl-4 pr-2">
             <Index each={messages}>
               {(message) => (
@@ -264,6 +267,28 @@ export function ChatPage() {
       <SearchDialog />
       <OpenRouterSetupDialog />
     </div >
+  )
+}
+
+
+function Welcome() {
+  let { user } = useCurrentUser()
+  return (
+    <section class="h-screen flex items-center justify-center">
+      <div class="text-on-surface-light text-lg">
+        <header class="pb-6 text-xl">
+          Welcome, {user.name}.
+        </header>
+        <ul class="space-y-2">
+          <li>
+            Search Everywhere <span class="text-primary inline-block ml-2 border rounded-full px-2 text-sm py-0.5">Ctrl+K</span>
+          </li>
+          <li>
+            New Chat <span class="text-primary inline-block ml-2 border rounded-full px-2 text-sm py-0.5">Ctrl+O</span>
+          </li>
+        </ul>
+      </div>
+    </section>
   )
 }
 
